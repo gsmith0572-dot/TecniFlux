@@ -21,7 +21,7 @@ import multer from "multer";
 import { uploadPDFToDrive, deleteFileFromDrive, downloadFileFromDrive } from "./google-drive";
 import { sendPasswordResetEmail, sendUsernameReminderEmail } from "./email";
 import { passwordResetLimiter, usernameReminderLimiter, checkEmailRateLimit } from "./rate-limit";
-import type { Diagram } from "@shared/schema";
+import type { Diagram } from "../shared/schema";
 import { importFromGoogleSheet } from "./import-sheets";
 import { renderSecurePDFViewer } from "./pdf-viewer-template";
 

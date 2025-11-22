@@ -8,10 +8,10 @@ import {
   type AppSetting,
   type DiagramHistory,
   type InsertDiagramHistory
-} from "@shared/schema";
+} from "../shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { users, diagrams, payments, appSettings, diagramHistory } from "@shared/schema";
+import { users, diagrams, payments, appSettings, diagramHistory } from "../shared/schema";
 import { eq, like, and, gte, lte, gt, desc, sql, or } from "drizzle-orm";
 
 export interface IStorage {
