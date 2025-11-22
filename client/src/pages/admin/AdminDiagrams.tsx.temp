@@ -1,0 +1,489 @@
+import { useState } from 'react';
+import { useAdminDiagrams, useCreateDiagram, useDeleteDiagram } from '@/hooks/admin/useAdminDiagrams';
+import { AdminStatsCard } from '@/components/admin/AdminStatsCard';
+import { UploadZone } from '@/components/admin/UploadZone';
+import { FileText, Plus, Trash2, ExternalLink, Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+
+const createDiagramSchema = z.object({
+  make: z.string().min(1, 'La marca es requerida'),
+  model: z.string().min(1, 'El modelo es requerido'),
+  year: z.string().min(4, 'El año debe tener 4 dígitos'),
+  systemType: z.string().min(1, 'El sistema es requerido'),
+  description: z.string().optional(),
+  hasFile: z.boolean().refine((val) => val === true, {
+    message: 'Debes seleccionar un archivo PDF',
+  }),
+});
+
+type CreateDiagramForm = z.infer<typeof createDiagramSchema>;
+
+export default function AdminDiagrams() {
+  const [search, setSearch] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [spreadsheetId, setSpreadsheetId] = useState('');
+  const [sheetName, setSheetName] = useState('Sheet1');
+  
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useAdminDiagrams();
+  const createDiagram = useCreateDiagram();
+  const deleteDiagram = useDeleteDiagram();
+
+  const importMutation = useMutation({
+    mutationFn: async ({ spreadsheetId, sheetName }: { spreadsheetId: string; sheetName: string }) => {
+      const response = await apiRequest('POST', '/api/admin/diagrams/import', { spreadsheetId, sheetName });
+      const data = await response.json();
+      return data;
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: 'Importación Exitosa',
+        description: data.message || `${data.imported} diagramas importados correctamente`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/diagrams'] });
+      setIsImportOpen(false);
+      setSpreadsheetId('');
+      setSheetName('Sheet1');
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error en Importación',
+        description: error.message || 'No se pudieron importar los diagramas',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const form = useForm<CreateDiagramForm>({
+    resolver: zodResolver(createDiagramSchema),
+    defaultValues: {
+      make: '',
+      model: '',
+      year: '',
+      systemType: '',
+      description: '',
+      hasFile: false,
+    },
+  });
+
+  const filteredDiagrams = data?.diagrams.filter(diagram => {
+    const searchLower = search.toLowerCase();
+    return (
+      diagram.fileName.toLowerCase().includes(searchLower) ||
+      diagram.make.toLowerCase().includes(searchLower) ||
+      diagram.model.toLowerCase().includes(searchLower) ||
+      diagram.systemType.toLowerCase().includes(searchLower)
+    );
+  }) || [];
+
+  const handleCreate = async (values: CreateDiagramForm) => {
+    if (!selectedFile) {
+      form.setError('hasFile', {
+        message: 'Debes seleccionar un archivo PDF',
+      });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('pdf', selectedFile);
+    formData.append('make', values.make);
+    formData.append('model', values.model);
+    formData.append('year', values.year);
+    formData.append('systemType', values.systemType);
+    if (values.description) {
+      formData.append('description', values.description);
+    }
+
+    createDiagram.mutate(formData, {
+      onSuccess: () => {
+        setIsCreateOpen(false);
+        form.reset();
+        setSelectedFile(null);
+      },
+    });
+  };
+
+  const handleFileSelect = (file: File) => {
+    setSelectedFile(file);
+    form.setValue('hasFile', true);
+    form.clearErrors('hasFile');
+  };
+
+  const handleFileRemove = () => {
+    setSelectedFile(null);
+    form.setValue('hasFile', false);
+  };
+
+  const handleDelete = () => {
+    if (deleteId) {
+      deleteDiagram.mutate(deleteId, {
+        onSuccess: () => {
+          setDeleteId(null);
+        },
+      });
+    }
+  };
+
+  return (
+    <div className="p-8 space-y-6">
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold" data-testid="heading-diagrams">Gestión de Diagramas</h1>
+          <p className="text-muted-foreground mt-2">
+            Administra el catálogo de diagramas automotrices
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" data-testid="button-import-sheets">
+                <Download className="h-4 w-4 mr-2" />
+                Importar Google Sheets
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Importar desde Google Sheets</DialogTitle>
+                <DialogDescription>
+                  Importa diagramas desde tu hoja de cálculo "TecniFlux_Index"
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="spreadsheet-id">ID de Google Sheet</Label>
+                  <Input
+                    id="spreadsheet-id"
+                    placeholder="1AbC123XyZ456..."
+                    value={spreadsheetId}
+                    onChange={(e) => setSpreadsheetId(e.target.value)}
+                    data-testid="input-spreadsheet-id"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Copia el ID desde la URL: docs.google.com/spreadsheets/d/<strong>[ID]</strong>/edit
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sheet-name">Nombre de la Hoja</Label>
+                  <Input
+                    id="sheet-name"
+                    placeholder="Sheet1"
+                    value={sheetName}
+                    onChange={(e) => setSheetName(e.target.value)}
+                    data-testid="input-sheet-name"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsImportOpen(false)}
+                  disabled={importMutation.isPending}
+                  data-testid="button-cancel-import"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={() => importMutation.mutate({ spreadsheetId, sheetName })}
+                  disabled={!spreadsheetId || importMutation.isPending}
+                  data-testid="button-confirm-import"
+                >
+                  {importMutation.isPending ? 'Importando...' : 'Importar'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-create-diagram">
+                <Plus className="h-4 w-4 mr-2" />
+                Nuevo Diagrama
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Subir Nuevo Diagrama</DialogTitle>
+                <DialogDescription>
+                  Completa la información del diagrama y sube el archivo PDF
+                </DialogDescription>
+              </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(handleCreate)} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="make"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Marca</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Toyota, Ford, etc." {...field} data-testid="input-make" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="model"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Modelo</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Corolla, F-150, etc." {...field} data-testid="input-model" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="year"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Año</FormLabel>
+                        <FormControl>
+                          <Input placeholder="2024" {...field} data-testid="input-year" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="systemType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Sistema</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Eléctrico, Motor, etc." {...field} data-testid="input-system" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Descripción (opcional)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Información adicional..." {...field} data-testid="input-description" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="hasFile"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Archivo PDF</FormLabel>
+                      <FormControl>
+                        <input type="hidden" {...field} value={field.value ? 'true' : 'false'} />
+                      </FormControl>
+                      <UploadZone
+                        onFileSelect={handleFileSelect}
+                        onFileRemove={handleFileRemove}
+                        accept="application/pdf"
+                        maxSize={10 * 1024 * 1024}
+                        disabled={createDiagram.isPending}
+                      />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsCreateOpen(false)}
+                    disabled={createDiagram.isPending}
+                    data-testid="button-cancel"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={!selectedFile || createDiagram.isPending}
+                    data-testid="button-submit"
+                  >
+                    {createDiagram.isPending ? 'Subiendo...' : 'Subir Diagrama'}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <AdminStatsCard
+          title="Total Diagramas"
+          value={data?.total || 0}
+          icon={FileText}
+          description="Diagramas disponibles"
+        />
+        <AdminStatsCard
+          title="Marcas"
+          value={new Set(data?.diagrams.map(d => d.make) || []).size}
+          description="Fabricantes únicos"
+        />
+        <AdminStatsCard
+          title="Sistemas"
+          value={new Set(data?.diagrams.map(d => d.systemType) || []).size}
+          description="Tipos de sistemas"
+        />
+      </div>
+
+      <Card className="p-6">
+        <div className="flex gap-4 mb-6">
+          <Input
+            placeholder="Buscar por nombre, marca, modelo o sistema..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="max-w-md"
+            data-testid="input-search"
+          />
+        </div>
+
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Archivo</TableHead>
+                <TableHead>Marca</TableHead>
+                <TableHead>Modelo</TableHead>
+                <TableHead>Año</TableHead>
+                <TableHead>Sistema</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    Cargando diagramas...
+                  </TableCell>
+                </TableRow>
+              ) : filteredDiagrams.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    No se encontraron diagramas
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredDiagrams.map((diagram) => (
+                  <TableRow key={diagram.id} data-testid={`row-diagram-${diagram.id}`}>
+                    <TableCell className="font-medium max-w-xs truncate" data-testid={`text-filename-${diagram.id}`}>
+                      {diagram.fileName}
+                    </TableCell>
+                    <TableCell data-testid={`text-make-${diagram.id}`}>{diagram.make}</TableCell>
+                    <TableCell data-testid={`text-model-${diagram.id}`}>{diagram.model}</TableCell>
+                    <TableCell data-testid={`text-year-${diagram.id}`}>{diagram.year}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" data-testid={`badge-system-${diagram.id}`}>
+                        {diagram.systemType}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          asChild
+                          data-testid={`button-view-${diagram.id}`}
+                        >
+                          <a href={diagram.directUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDeleteId(diagram.id)}
+                          data-testid={`button-delete-${diagram.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción eliminará el diagrama permanentemente de la base de datos y de Google Drive.
+              Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleteDiagram.isPending}
+              data-testid="button-confirm-delete"
+            >
+              {deleteDiagram.isPending ? 'Eliminando...' : 'Eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

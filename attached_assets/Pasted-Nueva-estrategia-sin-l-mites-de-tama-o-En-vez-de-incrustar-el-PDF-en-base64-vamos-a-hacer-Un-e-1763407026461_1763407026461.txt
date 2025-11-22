@@ -1,0 +1,315 @@
+Nueva estrategia (sin límites de tamaño)
+En vez de incrustar el PDF en base64, vamos a hacer:
+
+
+Un endpoint que sirve el PDF crudo desde el backend (stream/buffer), como ya tenías (Content-Type: application/pdf).
+
+
+Un endpoint que devuelve una página HTML con un <iframe>/<embed> apuntando a ese endpoint, pero:
+
+
+Metido en un contenedor con overflow: hidden
+
+
+Mueve el PDF hacia arriba con margin-top: -40px
+
+
+Eso “saca” la barra de herramientas de la vista → el usuario no ve botón de descargar.
+
+
+
+
+No es 100% imposible copiar (nadie lo puede), pero hace mucho más difícil que te roben todo el catálogo.
+
+✅ PASO 1 – Actualizar pdf-viewer-template.ts
+Abre el archivo server/pdf-viewer-template.ts que creamos antes y reemplaza TODO por esto:
+// server/pdf-viewer-template.ts
+
+export function renderSecurePDFViewer(diagramId: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>TecniFlux - Visor Seguro</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #05060a;
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    #wrapper {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+    }
+    #header {
+      padding: 8px 12px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: linear-gradient(90deg, #0f172a, #020617);
+      border-bottom: 1px solid #1f2933;
+    }
+    #header span.app-name {
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      color: #38bdf8;
+    }
+    #header span.note {
+      opacity: 0.8;
+      font-size: 12px;
+    }
+    #viewer-wrapper {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      overflow: hidden; /* escondemos la barra superior del visor PDF */
+      background: #05060a;
+      position: relative;
+    }
+    #viewer {
+      position: absolute;
+      top: -40px; /* mueve el PDF hacia arriba para ocultar la barra */
+      left: 0;
+      width: 100%;
+      height: calc(100% + 40px);
+      border: none;
+      background: #05060a;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="wrapper">
+    <div id="header">
+      <span class="app-name">TecniFlux • Visor seguro</span>
+      <span class="note">Sólo visualización • Descarga deshabilitada</span>
+    </div>
+    <div id="viewer-wrapper">
+      <iframe
+        id="viewer"
+        src="/api/diagrams/${diagramId}/file#toolbar=0&navpanes=0"
+      ></iframe>
+    </div>
+  </div>
+</body>
+</html>
+`;
+}
+
+👉 Fíjate que aquí ya no pasamos el PDF en base64.
+Simplemente apuntamos a /api/diagrams/${diagramId}/file.
+
+✅ PASO 2 – Import ya está OK
+En server/routes.ts ya tienes este import (si no, agrégalo arriba con los demás):
+import { renderSecurePDFViewer } from "./pdf-viewer-template";
+
+
+✅ PASO 3 – Cambiar la ruta /api/diagrams/:id/view y crear /api/diagrams/:id/file
+Ahora en server/routes.ts vamos a hacer dos cosas:
+3.1 Reemplazar la ruta /api/diagrams/:id/view
+Busca esta ruta (la que ahora mismo se encarga de traer el PDF desde Drive y enviar el buffer):
+// Serve PDF through secure proxy (NEVER expose directUrl to frontend)
+app.get("/api/diagrams/:id/view", requireAuth, async (req, res) => {
+  // ... TODO el código largo que termina en res.send(buffer);
+});
+
+Y reemplázala COMPLETA por esta versión súper simple:
+// Serve HTML page with secure PDF viewer (no direct download UI)
+app.get("/api/diagrams/:id/view", requireAuth, async (req, res) => {
+  try {
+    const diagramId = req.params.id;
+
+    // Opcional: podrías validar que el diagrama exista,
+    // pero igual la ruta /file hará validaciones fuertes.
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, private"
+    );
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Referrer-Policy", "no-referrer");
+
+    const html = renderSecurePDFViewer(diagramId);
+    res.send(html);
+  } catch (error) {
+    console.error("[PDF View] Error:", error);
+    res.status(500).json({ error: "Error al cargar visor seguro" });
+  }
+});
+
+Esta ruta ya no toca el PDF.
+Solo devuelve la página HTML que contiene el <iframe> apuntando a /file.
+
+3.2 Crear la nueva ruta /api/diagrams/:id/file
+Justo debajo de esa ruta anterior, agrega ESTA nueva ruta que sí se encarga de traer el PDF desde Google Drive y hacerlo stream al navegador:
+// Serve raw PDF through secure proxy (used ONLY by the internal viewer iframe)
+app.get("/api/diagrams/:id/file", requireAuth, async (req, res) => {
+  const diagramId = req.params.id;
+  console.log(`[PDF File] Request received for diagram: ${diagramId}`);
+  
+  try {
+    const userId = req.session!.userId!;
+
+    // 1. Verify user exists and has active subscription
+    const user = await storage.getUser(userId);
+    if (!user) {
+      console.log(`[PDF File] User not found: ${userId}`);
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    if (!user.isActive) {
+      console.log(`[PDF File] User inactive: ${userId}`);
+      return res.status(403).json({ error: "Cuenta inactiva" });
+    }
+
+    if (user.subscriptionStatus !== "active") {
+      console.log(
+        `[PDF File] Subscription inactive: ${userId}, status: ${user.subscriptionStatus}`
+      );
+      return res.status(403).json({ error: "Suscripción inactiva" });
+    }
+
+    // 2. Verify diagram exists
+    const diagram = await storage.getDiagram(diagramId);
+    if (!diagram) {
+      console.log(`[PDF File] Diagram not found: ${diagramId}`);
+      return res.status(404).json({ error: "Diagrama no encontrado" });
+    }
+
+    if (!diagram.directUrl) {
+      console.log(`[PDF File] No directUrl for diagram: ${diagramId}`);
+      return res.status(404).json({ error: "URL del archivo no disponible" });
+    }
+
+    console.log(`[PDF File] Fetching PDF from Drive for diagram: ${diagramId}`);
+
+    // 3. Fetch PDF from Google Drive
+    const response = await fetch(diagram.directUrl, {
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+
+    if (!response.ok) {
+      console.error(
+        `[PDF File] Failed to fetch PDF: ${response.status} ${response.statusText}`
+      );
+      return res.status(502).json({ error: "Error al obtener el archivo" });
+    }
+
+    // 4. Stream or buffer – aquí usamos buffer como ya tenías
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    console.log(
+      `[PDF File] PDF loaded, size: ${buffer.length} bytes, sending to client`
+    );
+
+    // 5. Set headers for inline PDF
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'inline; filename="diagram.pdf"');
+    res.setHeader("Content-Length", buffer.length.toString());
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, private"
+    );
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Referrer-Policy", "no-referrer");
+
+    res.send(buffer);
+  } catch (error) {
+    console.error("[PDF File] Error:", error);
+    res.status(500).json({ error: "Error al servir el archivo" });
+  }
+});
+
+👉 Esta ruta hace lo que antes hacía /view, pero ahora:
+
+
+Solo la usa el visor interno
+
+
+Nunca la llama el usuario directamente desde el front (tú no pones el link en ningún lado)
+
+
+El front siempre abre /api/diagrams/:id/view (HTML con iframe), NO /file
+
+
+
+✅ PASO 4 – Verificar el front
+En tu componente React donde abres el diagrama (por ejemplo en DiagramDetailDialog.tsx), asegúrate de que el botón use esto:
+const handleOpenPDF = () => {
+  if (!diagram.id) return;
+  window.open(`/api/diagrams/${diagram.id}/view`, "_blank");
+};
+
+👉 Muy importante:
+No uses diagram.directUrl ni diagram.fileUrl en el front.
+Solo usa tus rutas /api/diagrams/....
+
+📌 Qué va a pasar ahora en la práctica
+
+
+El usuario hace clic en “Ver diagrama”.
+
+
+Se abre una nueva pestaña:
+https://tudominio.com/api/diagrams/123/view
+
+
+Esa URL devuelve una página oscura, con el header “TecniFlux • Visor seguro”.
+
+
+El <iframe> dentro carga …/api/diagrams/123/file, que:
+
+
+Valida usuario, plan, suscripción
+
+
+Trae el PDF de Drive
+
+
+Lo envía como application/pdf
+
+
+
+
+El navegador muestra el visor PDF estándar… PERO:
+
+
+La barra de herramientas está fuera de la vista (con top: -40px y overflow: hidden)
+
+
+No hay botón de descarga visible
+
+
+No hay UI de Google Drive
+
+
+
+
+
+Si después de probarlo todavía ves algún botón de “guardar” o similar, dime qué navegador estás usando (Chrome, Safari, móvil, etc.) y ajustamos el CSS/altura para “cortar” mejor la parte de arriba del viewer.
+Cuando lo pruebes con un PDF grande, cuéntame:
+
+
+¿Ya se ve el diagrama?
+
+
+¿Ves todavía algún botón de descargar?
+
+
+¿Se siente fluido el scroll?
+
+

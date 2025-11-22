@@ -1,0 +1,317 @@
+Build a complete production-ready web application named TecniFlux. The purpose of this application is to allow automotive technicians to search, filter, decode VIN numbers, scan VIN labels, and view automotive wiring diagrams stored as PDF files in Google Drive. The structured index of all documents is stored in a Google Sheets file that is already created.
+
+Follow all requirements below in full detail.
+
+===================================================================
+
+Purpose of the App
+===================================================================
+
+TecniFlux must allow technicians to:
+
+Search automotive wiring diagrams by filters such as:
+
+make
+
+model
+
+year
+
+system
+
+keyword
+
+Search by VIN using:
+
+manual input (17 characters)
+
+scanning VIN barcodes (PDF417, Code 39)
+
+capturing a photo of the VIN label and extracting text with OCR
+
+Decode VIN information using the NHTSA VIN Decode API:
+https://vpic.nhtsa.dot.gov/api/vehicles/decodevin/{VIN}?format=json
+
+Open and view PDF wiring diagrams hosted in Google Drive using direct file URLs stored in Google Sheets.
+
+===================================================================
+2. Data Sources and Integration
+
+A. Primary Database: Google Sheets
+This Google Sheets file contains all indexed documents. Columns include:
+
+file_name
+
+file_id
+
+file_url
+
+direct_url
+
+mime_type
+
+parent_folder
+
+full_path
+
+last_updated
+
+make
+
+model
+
+year
+
+system
+
+The application must:
+
+Connect to Google Sheets via the Google Sheets API.
+
+Load the entire dataset into the application.
+
+Cache records for performance.
+
+Filter and search records efficiently.
+
+B. File Repository: Google Drive
+All wiring diagrams are stored as PDF files in Google Drive.
+The application must:
+
+Use the "direct_url" field to open PDF files.
+
+Display PDFs in an embedded PDF viewer component.
+
+Support mobile and desktop PDF viewing.
+
+===================================================================
+3. User Authentication System
+
+Implement a secure user auth system with:
+
+Email and password login
+
+JWT or session-based auth
+
+Two user roles:
+
+admin
+
+technician
+
+Route protection and secure API endpoints
+
+Admins must be able to edit metadata but not upload PDFs.
+Technicians can only search and view diagrams.
+
+===================================================================
+4. App Features and Modules
+
+A. Manual Search Module
+
+Filters for make, model, year, system
+
+Keyword search
+
+Results list with essential metadata
+
+Button to open PDF viewer
+
+B. VIN Search Module
+
+Manual VIN input:
+
+Validate 17-character VIN
+
+Call NHTSA API
+
+Auto-fill make, model, year
+
+Show matching PDFs
+
+VIN Barcode Scan:
+
+Implement camera access
+
+Support PDF417 and Code 39
+
+Detect barcode and extract VIN
+
+Pass VIN to decode module
+
+VIN Photo OCR:
+
+Allow taking a photo of the VIN label
+
+Extract VIN text using OCR
+
+Acceptable OCR options:
+
+Google Cloud Vision API
+
+Tesseract.js
+
+Any browser-compatible OCR engine
+
+Auto-fill fields and trigger search
+
+C. PDF Viewer Module
+
+Embedded PDF viewer
+
+Use direct_url
+
+Support zoom, scroll, full-screen
+
+Works on mobile and desktop
+
+Dark UI styling
+
+D. Admin Panel
+
+Admin can edit metadata from Google Sheets
+
+Admin can refresh dataset from Google Sheets
+
+Admin can classify and tag documents
+
+Admin cannot upload PDFs
+
+===================================================================
+5. UI / UX Requirements
+
+Use this color palette (TecniFlux branding):
+
+Primary: Electric Blue #2E8BFF
+
+Secondary: Neon Cyan #18E0FF
+
+Background: Graphite Gray #1E1F24
+
+Text: White #FFFFFF
+
+The UI must be:
+
+Clean
+
+Technical
+
+Modern
+
+Mobile-first
+
+Responsive
+
+Futuristic automotive style
+
+Design all screens:
+
+Login
+
+Signup
+
+Home
+
+VIN Search
+
+VIN Scan
+
+VIN OCR
+
+Manual Search
+
+Results
+
+PDF Viewer
+
+Admin Dashboard
+
+===================================================================
+6. App Structure
+
+Pages:
+
+/login
+
+/signup
+
+/home
+
+/search
+
+/vin
+
+/scan-vin
+
+/results
+
+/viewer/:id
+
+/admin
+
+Components:
+
+Search bar
+
+Dropdown filters
+
+VIN camera scanner
+
+VIN OCR processor
+
+PDF viewer embed
+
+Results list
+
+Navigation
+
+Admin editor
+
+Back-end:
+
+Node.js or Replit backend service
+
+REST API routes
+
+Authentication routes
+
+Google Sheets integration script
+
+NHTSA VIN decode script
+
+OCR and barcode scanning logic
+
+===================================================================
+7. Final Deliverable
+
+Generate a fully working, production-ready TecniFlux application with:
+
+Authentication system
+
+Google Sheets integration
+
+Google Drive PDF linking
+
+Search engine with filters
+
+VIN decoder
+
+Barcode scanner
+
+OCR VIN extraction
+
+PDF viewer
+
+Admin panel
+
+Full UI using the TecniFlux color palette
+
+Backend logic
+
+Frontend logic
+
+Navigation
+
+Secure API endpoints
+
+The delivered project must be deployable immediately on Replit.

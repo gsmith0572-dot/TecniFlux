@@ -1,0 +1,50 @@
+No importes solo los 564 diagramas completos.
+
+Quiero la siguiente estrategia:
+
+1) Importar TODAS las filas de la Google Sheet:
+   https://docs.google.com/spreadsheets/d/1ZdRSgJs8XiC3LpIan-anzNt7xpm0DTEPG0tpYsO6WTQ/edit?gid=0
+
+   Columnas:
+   - file_name (A)
+   - file_id (B)
+   - file_url (C)
+   - direct_url (D)
+   - make (E)
+   - model (F)
+   - year (G)
+   - system (H)
+   - status (I) -> esta columna indica "complete" o "partial"
+
+2) En la base de datos interna de la app:
+   - Todos esos campos pueden ser NULL/opcionales, excepto:
+     file_name, file_id, direct_url (estos son obligatorios).
+   - Añade un campo calculado "search_text" que sea la concatenación:
+     file_name + " " + make + " " + model + " " + year + " " + system.
+     Este campo se usará para búsquedas de texto libre.
+
+3) Lógica de búsqueda en la app:
+   - Cuando el usuario busca por make/model/year/system:
+     a) Primero mostrar resultados donde esos campos coincidan y status = "complete".
+     b) Después mostrar resultados "partial" que coincidan usando search_text o file_name.
+   - Si el usuario solo escribe palabras sueltas (ejemplo: "Corolla 2014 ECU"),
+     usar búsqueda de texto sobre search_text (fuzzy / contains).
+   - Añadir un filtro opcional en el UI: 
+     [ ] Mostrar solo diagramas completos
+     que oculte las filas con status = "partial" si el usuario lo marca.
+
+4) Pantalla de detalle de cada diagrama:
+   - Si falta make/model/year/system, mostrar "Desconocido" o dejar el campo vacío,
+     pero siempre mostrar:
+     - file_name
+     - enlace para abrir el PDF (file_url)
+     - botón para descargar (direct_url)
+
+5) Diseño pensando en crecimiento:
+   - La app debe poder volver a importar la misma hoja en el futuro
+     (por ejemplo, vía un botón o cron job) para actualizar registros
+     cuando se completen los campos make/model/year/system.
+   - Usa el file_id como identificador único del diagrama para decidir
+     si se crea un registro nuevo o se actualiza uno existente.
+
+Con esta lógica quiero lanzar la app a producción, aunque existan muchos registros con metadata incompleta, pero siempre priorizando los diagramas "complete".

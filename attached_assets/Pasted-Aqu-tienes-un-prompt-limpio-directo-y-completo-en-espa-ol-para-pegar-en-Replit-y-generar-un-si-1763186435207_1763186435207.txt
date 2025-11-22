@@ -1,0 +1,145 @@
+Aquí tienes un **prompt limpio, directo y completo** en español para pegar en Replit y generar un sistema de **recuperación de usuario y restablecimiento de contraseña** totalmente funcional.
+Sin emojis, sin referencias personales, solo instrucciones técnicas claras.
+
+---
+
+PROMPT PARA REPLIT:
+
+Implementar un sistema completo de recuperación de credenciales para la aplicación existente. La aplicación ya cuenta con un sistema de autenticación por email/contraseña y roles, pero aún no dispone de mecanismos para recuperar contraseña ni recordar el usuario. Implementar todas las funciones necesarias para que un usuario pueda:
+
+1. Recuperar su contraseña mediante correo electrónico.
+2. Solicitar un enlace de restablecimiento seguro.
+3. Recordar su usuario (email) si lo olvidó, enviándolo a su correo registrado.
+4. Proteger todo el proceso con buenas prácticas de seguridad.
+
+Requisitos detallados:
+
+1. Recuperación de contraseña (forgot password)
+
+Crear las siguientes rutas:
+
+Frontend:
+
+* `/forgot-password`
+* `/reset-password/:token`
+
+Backend:
+
+* `POST /auth/request-password-reset`
+* `POST /auth/reset-password`
+
+Flujo requerido:
+
+* El usuario ingresa su email en `/forgot-password`.
+* Backend valida si ese email existe.
+* Backend genera un token seguro (UUID o JWT con expiración, por ejemplo 1 hora).
+* Guardar el token en base de datos con su fecha de expiración o almacenar directamente un reset JWT que incluya timestamp.
+* Enviar al usuario un correo electrónico con un enlace del tipo:
+  `https://APP_DOMAIN/reset-password/<token>`
+* El enlace debe expirar después del tiempo definido.
+* En la página `/reset-password/:token`, mostrar formulario para ingresar nueva contraseña.
+* Backend valida el token y si es válido actualiza la contraseña.
+* Invalidar el token después de utilizarlo.
+
+2. Recordar usuario (olvidó su email)
+
+Crear rutas:
+
+Frontend:
+
+* `/forgot-username`
+
+Backend:
+
+* `POST /auth/request-username-reminder`
+
+Flujo:
+
+* El usuario ingresa cualquier dato disponible (por ejemplo, número de teléfono, documento o información que el sistema tenga registrada; si la única identificación es el email, entonces solo debe ingresar su nombre completo).
+* Backend busca coincidencias en la base de datos.
+* Si encuentra un solo usuario coincidente, enviar un correo al email registrado del usuario con un mensaje diciendo:
+  “Su usuario registrado es: <email>”.
+* No mostrar nunca en pantalla el email del usuario para no revelar información sensible.
+* Si no hay coincidencias o hay múltiples coincidencias, responder con un mensaje genérico:
+  “Si encontramos información válida, enviaremos un mensaje a su correo registrado”.
+* Registrar en backend los intentos para evitar abuso.
+
+3. Seguridad del proceso
+
+* No revelar públicamente si un email existe o no en la base de datos. Las respuestas deben ser genéricas.
+* Los tokens de recuperación deben tener expiración estricta.
+* Las contraseñas deben guardarse con hashing (bcrypt u otro algoritmo fuerte).
+* El correo enviado debe contener:
+
+  * Un enlace seguro.
+  * Un mensaje claro.
+  * Advertencia si no solicitó el cambio.
+* Implementar rate limiting en las rutas `/auth/request-password-reset` y `/auth/request-username-reminder`.
+
+4. Integración con el sistema actual de auth
+
+* Utilizar las funciones existentes de creación de tokens y hashing de contraseñas.
+* Agregar el campo `password_reset_token` y `password_reset_expires` si se usa base de datos SQL o NoSQL.
+* Si se usa JWT para tokens de reseteo:
+
+  * Incluir `sub: user_id` y `exp` obligatoriamente.
+  * Verificar en backend la firma y expiración.
+
+5. UI/UX requerido
+
+Páginas:
+
+A) Página `/forgot-password`
+
+* Un campo: email.
+* Botón: “Enviar enlace de recuperación”.
+* Mensaje estándar: “Si su correo está registrado, recibirá instrucciones”.
+
+B) Página `/reset-password/:token`
+
+* Validar token antes de mostrar formulario.
+* Campos:
+
+  * Nueva contraseña
+  * Confirmación de contraseña
+* Botón: “Actualizar contraseña”.
+* Mostrar mensaje final: “Su contraseña fue restablecida exitosamente”.
+
+C) Página `/forgot-username`
+
+* Campo identificador (nombre completo o número telefónico).
+* Botón: “Enviar recordatorio”.
+* Mensaje genérico.
+
+6. Backend (Node.js con Express u otro stack compatible con Replit)
+
+* Middleware para validar y decodificar token de reseteo.
+* Funciones utilitarias:
+
+  * Generar token seguro
+  * Enviar email con el enlace
+  * Verificar expiración del token
+  * Actualizar contraseña del usuario
+
+7. Entregable final
+
+El resultado debe ser funcional de principio a fin:
+
+* Solicitud de reseteo
+* Envío de email
+* Página de restablecimiento
+* Actualización segura de contraseña
+* Proceso para recordar usuario vía email
+* Tokens seguros con expiración
+* Protección contra enumeración de usuarios
+* Código frontend y backend listo para ejecutar en Replit
+
+Implementar todo de forma modular y conectada al sistema de autenticación existente.
+
+---
+
+Si quieres, puedo generarte:
+
+– El prompt para configurar el servicio de correos (SendGrid, Mailgun, Gmail API).
+– El prompt para integrar esto con tu base de datos específica (SQL, Mongo, Firebase, etc.).
+– O el código completo ya listo para pegar en Replit.

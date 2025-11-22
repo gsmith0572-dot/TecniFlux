@@ -1,0 +1,126 @@
+Qué está pasando en realidad
+
+En tus capturas de consola se ve esto:
+
+Failed to load resource: the server responded with a status of 401 api/auth/me
+
+Eso significa:
+
+El backend está devolviendo 401 (no autenticado) a las llamadas /api/auth/me.
+
+Ese mismo middleware requireAuth protege también:
+
+/api/diagrams/filters → de ahí vienen las marcas/años/sistemas
+
+/api/diagrams/search → de ahí vienen los resultados
+
+Resultado:
+
+useQuery en SearchFilters no recibe datos → filterOptions es undefined.
+
+Los <Select> solo tienen la opción "Todas las marcas" / "Todos los años" / "Todos los sistemas".
+
+Aunque abras el menú, no hay otras opciones para elegir, por eso “no sirve”.
+
+Y cuando presionas Buscar, la llamada a /api/diagrams/search también devuelve 401 → 0 resultados siempre.
+
+Por eso en el preview de Replit sí funciona (las APIs devuelven 200 con datos)
+y en tecniflux.app no (las APIs devuelven 401).
+
+2. Por qué pasa solo en tecniflux.app
+
+Todo apunta a un problema de cookie de sesión con el dominio/custom domain:
+
+El login guarda la sesión en un cookie (express-session).
+
+Si ese cookie:
+
+se crea para otro dominio (*.replit.app), o
+
+se marca secure: true sin trust proxy,
+
+o sameSite mal configurado,
+
+entonces en https://tecniflux.app el navegador no envía el cookie al backend → el backend cree que NO estás autenticado → 401 en /api/auth/me, /api/diagrams/filters, etc.
+
+En el preview de Replit estás en el mismo dominio que el backend y por eso todo va fino.
+
+3. Qué hacer paso a paso (código del servidor)
+
+Necesitas tocar el archivo donde configuras Express + sesión.
+Normalmente se llama algo como:
+
+server/index.ts
+
+o server/app.ts
+
+o server/server.ts
+
+3.1. Asegura trust proxy y la cookie
+
+Dentro de ese archivo, busca donde usas express-session, algo parecido a:
+
+import session from "express-session";
+// ...
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET!,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: true,
+      sameSite: "lax",
+      domain: "algo..."
+    },
+  })
+);
+
+
+Cámbialo a algo de este estilo (ajústalo a tu código, pero respeta la idea):
+
+import session from "express-session";
+import connectSqlite3 from "connect-sqlite3";
+
+const SQLiteStore = connectSqlite3(session);
+
+// MUY IMPORTANTE DETRÁS DE PROXY (Replit / Cloudflare)
+app.set("trust proxy", 1);
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "tecniflux-dev-secret",
+    resave: false,
+    saveUninitialized: false,
+    store: new SQLiteStore({
+      db: "sessions.sqlite",
+      dir: "./data",
+    }),
+    cookie: {
+      httpOnly: true,
+      // prueba así primero:
+      secure: false,         // para descartar problema de "secure" + proxy
+      sameSite: "lax",
+      // ⛔ IMPORTANTE: NO pongas `domain` aquí de momento
+      // deja que el navegador use automáticamente el dominio actual (tecniflux.app)
+    },
+  })
+);
+
+
+Puntos clave:
+
+Quita cualquier domain: "..." que esté hardcodeado a replit.app o similar.
+
+Si quieres usar uno, que sea .tecniflux.app, pero primero prueba sin domain.
+
+Pon secure: false solo para probar que el problema viene de ahí.
+
+Si con esto funciona, luego puedes subirlo a:
+
+secure: process.env.NODE_ENV === "production",
+
+
+siempre con app.set("trust proxy", 1);.
+
+Guarda, vuelve a hacer deploy/Publish en Replit.

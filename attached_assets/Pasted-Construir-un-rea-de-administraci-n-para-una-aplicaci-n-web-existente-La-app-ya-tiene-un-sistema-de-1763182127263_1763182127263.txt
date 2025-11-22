@@ -1,0 +1,310 @@
+Construir un área de administración para una aplicación web existente. La app ya tiene un sistema de autenticación por email/contraseña y un rol de usuario tipo "admin" y otro tipo "usuario" o "técnico". El objetivo es implementar una sección privada y segura, accesible solo para administradores, donde se pueda gestionar usuarios, gestionar la base de datos de diagramas (PDFs), subir nuevos archivos, y además disponer de un módulo financiero que muestre el dinero captado por suscripciones mensuales, contemplando costos operativos y taxación del 20% sobre el gross mensual.
+
+Seguir estas instrucciones al detalle y generar código completo (frontend + backend) compatible con Replit.
+
+1. Requisitos generales
+
+* La aplicación ya maneja autenticación con email y contraseña y un campo de rol: "admin" o "tecnico" (o "user").
+* Solo los usuarios con rol "admin" pueden acceder al área de administración.
+* Cualquier usuario sin rol "admin" que intente acceder a rutas de administración debe ser:
+
+  * Redirigido a una página de “No autorizado” o a la página principal.
+  * Bloqueado también en el backend (no solo en el frontend).
+* Las rutas del admin deben estar protegidas en:
+
+  * Frontend (protección de ruta basada en rol).
+  * Backend (middleware de autorización en endpoints de API).
+
+2. Estructura de rutas y navegación
+
+Crear una estructura de administración con:
+
+* Ruta principal protegida: `/admin`
+* Subrutas:
+
+  * `/admin/dashboard`
+  * `/admin/usuarios`
+  * `/admin/diagramas`
+  * `/admin/finanzas`
+  * `/admin/configuracion`
+
+Crear un layout de admin con:
+
+* Barra lateral (sidebar) o menú superior con enlaces a:
+
+  * Dashboard
+  * Usuarios
+  * Diagramas
+  * Finanzas
+  * Configuración
+* Área de contenido central donde se renderizarán las páginas internas.
+
+3. Autenticación y autorización
+
+* En el frontend:
+
+  * Si el usuario no está autenticado → redireccionar a `/login`.
+  * Si el usuario está autenticado pero su rol no es `admin` → mostrar mensaje “No autorizado” o redirigir a `/`.
+* En el backend:
+
+  * Implementar middleware que valide el token JWT o la sesión.
+  * Verificar que `user.role === "admin"` antes de ejecutar cualquier lógica de rutas de administración.
+  * Responder con error 403 (Forbidden) si el usuario no tiene permisos.
+
+4. Funcionalidades del área de administración
+
+A) Dashboard de administración
+
+* Mostrar métricas básicas:
+
+  * Número total de usuarios.
+  * Número total de diagramas/documentos.
+  * Fecha/hora de última actualización de datos (por ejemplo, última sincronización con la base de datos o con Google Sheets, si aplica).
+  * Lista breve de “últimos diagramas añadidos” (por ejemplo, últimos 10).
+* Presentar esta información en tarjetas (cards) o gráficos simples.
+
+B) Gestión de usuarios
+
+* Pantalla `/admin/usuarios` con:
+
+  * Tabla de usuarios:
+
+    * Columnas: nombre, email, rol, estado (activo/inactivo), fecha de creación, último acceso.
+  * Barra de búsqueda por nombre o email.
+  * Filtros opcionales por rol (admin, tecnico).
+* Funcionalidades:
+
+  * Cambiar el rol de un usuario (promover/degradar a admin o técnico).
+  * Desactivar o activar usuarios (soft delete).
+* Cada acción crítica (cambio de rol, desactivar usuario) debe mostrar un diálogo de confirmación antes de aplicarse.
+* El backend debe exponer endpoints seguros para:
+
+  * Listar usuarios.
+  * Actualizar rol.
+  * Cambiar estado activo/inactivo.
+
+C) Gestión de diagramas/documentos
+
+Suponer que existe una colección/tabla para diagramas con campos como:
+
+* id
+* file_name
+* file_url o direct_url (enlace directo al PDF, por ejemplo en Google Drive u otro almacenamiento externo)
+* make
+* model
+* year
+* system
+* tags (opcional)
+* created_at
+* updated_at
+
+La pantalla `/admin/diagramas` debe permitir:
+
+* Ver una tabla de todos los diagramas:
+
+  * Columnas: file_name, make, model, year, system, updated_at.
+* Filtrar por:
+
+  * make
+  * model
+  * year
+  * system
+* Buscar por texto en `file_name` o `tags`.
+* Editar metadata de un diagrama (make, model, year, system, tags, notas).
+* Guardar cambios mediante un endpoint seguro en el backend.
+* Opcional: eliminar o archivar un diagrama (con confirmación).
+
+D) Carga de nuevos diagramas/PDFs por parte del admin
+
+En `/admin/diagramas`, agregar una sección/formulario para que el admin pueda subir nuevos archivos PDF y registrarlos en la base de datos. Requisitos:
+
+* Formulario para alta de nuevo diagrama con campos:
+
+  * Archivo PDF (input tipo file).
+  * make (texto o dropdown).
+  * model (texto).
+  * year (número o texto).
+  * system (dropdown: Engine, ABS, Transmission, Airbag, BCM, etc.).
+  * tags (texto, separado por comas, opcional).
+* Al enviar el formulario:
+
+  * Subir el archivo a un almacén de archivos:
+
+    * Puede ser:
+
+      * Google Cloud Storage
+      * Amazon S3
+      * Google Drive mediante API
+      * Almacenamiento de archivos en el backend que se ejecute en Replit (si es razonable).
+  * Obtener la URL pública o “direct_url” del PDF.
+  * Crear un registro en la base de datos (o en la fuente de datos elegida, por ejemplo una fila nueva en Google Sheets si se usa como índice), incluyendo:
+
+    * file_name
+    * direct_url
+    * make
+    * model
+    * year
+    * system
+    * tags
+    * created_at
+    * updated_at
+* Mostrar mensaje de éxito o error.
+* Después de subir, actualizar la lista/tabla de diagramas en el frontend.
+
+E) Configuración general (Settings)
+
+En `/admin/configuracion` incluir:
+
+* Visualización de parámetros globales de la app:
+
+  * Entorno (test / producción).
+  * Tamaño de paginación por defecto en listas.
+  * Idioma por defecto (por ejemplo, “es”).
+* Posibilidad de cambiar algunos ajustes globales y guardarlos en la base de datos.
+* Endpoint backend para leer y guardar configuración de la aplicación.
+
+F) Módulo financiero: ingresos por suscripciones
+
+Implementar una pantalla `/admin/finanzas` centrada en los ingresos por suscripciones y la rentabilidad mensual de la app. Asumir que existe una fuente de datos (por ejemplo, tabla `subscriptions` o integración con Stripe/servicio de pagos) que contiene los pagos de suscripción con al menos:
+
+* id
+* user_id
+* amount (monto cobrado, en USD)
+* currency
+* created_at (fecha de pago)
+* status (ej. paid)
+* plan (opcional)
+
+Requisitos del módulo financiero:
+
+1. Cálculo mensual por suscripciones:
+
+   * Calcular, para un mes dado, al menos los siguientes valores:
+
+     * `gross_revenue`: suma total de los montos de suscripciones cobradas ese mes (status paid).
+     * `num_subscriptions`: cantidad de nuevas suscripciones o pagos exitosos ese mes.
+     * `operational_cost`: costo operativo fijo de la app, igual a 89 USD mensuales.
+     * `tax`: 20% del `gross_revenue` (0.20 * gross_revenue).
+     * `net_revenue`: gross_revenue - operational_cost - tax.
+   * Mostrar estos valores en tarjetas (cards) claramente:
+
+     * Ingresos brutos (Gross)
+     * Impuestos (20% del gross)
+     * Costo operativo fijo (89 USD)
+     * Ingreso neto (Net)
+
+2. Reporte del mes anterior:
+
+   * El primer día de cada mes, el área de admin debe presentar por defecto el reporte del mes inmediatamente anterior.
+   * Por ejemplo:
+
+     * Si hoy es 1 de marzo, mostrar el resumen de febrero.
+   * Implementar lógica en backend para:
+
+     * Detectar mes actual.
+     * Obtener el rango de fechas del mes anterior.
+     * Consultar los pagos en ese rango.
+     * Calcular gross, número de suscripciones, tax, costo operativo y net.
+   * La interfaz debe indicar claramente:
+
+     * “Reporte de: [Mes Año]”
+     * “Suscripciones del mes: [num_subscriptions]”
+     * “Ingresos brutos: [gross_revenue]”
+     * “Impuestos (20%): [tax]”
+     * “Costo operativo: 89 USD”
+     * “Ingreso neto: [net_revenue]”
+
+3. Selección manual de mes:
+
+   * Adicionalmente, permitir que el admin seleccione otro mes y año desde un selector (ej. dropdown de mes y año) para ver reportes históricos.
+   * Al cambiar la selección, recalcular y mostrar los valores de ese mes histórico.
+
+4. Fuentes de datos:
+
+   * Implementar endpoints backend que:
+
+     * Devuelvan estadísticas agregadas por mes.
+     * Permitan filtrar por rango de fechas.
+   * Los cálculos de gross, tax y net deben hacerse en el backend, no solo en el frontend.
+
+5. Seguridad:
+
+   * Toda la información financiera solo debe estar disponible para usuarios admin.
+   * En endpoints de finanzas, aplicar el mismo middleware de autorización de admin.
+
+5) UI/UX del área de admin
+
+* Crear un layout claro tipo panel de administración:
+
+  * Sidebar con enlaces:
+
+    * Dashboard
+    * Usuarios
+    * Diagramas
+    * Finanzas
+    * Configuración
+  * Barra superior con:
+
+    * Email del admin conectado.
+    * Botón de logout.
+* Diferenciar visualmente el área de admin del resto de la app.
+* Tablas con paginación, búsqueda y filtros para usuarios y diagramas.
+* Formularios con validación básica para usuarios, diagramas y configuraciones.
+* Mensajes de error claros cuando falle una acción de backend.
+* En la sección de finanzas:
+
+  * Uso de tarjetas/resúmenes y, opcionalmente, un gráfico de barras o línea mostrando gross y net por mes.
+
+6. Seguridad
+
+* Todas las rutas backend del área de admin deben:
+
+  * Verificar autenticación (token o sesión válida).
+  * Verificar que `role === "admin"`.
+* No confiar en el rol enviado por el cliente; obtener el rol desde la información del token/sesión en el backend.
+* Validar y sanitizar los datos recibidos en endpoints que:
+
+  * Actualizan usuarios.
+  * Crean o actualizan diagramas.
+  * Calculan o consultan información financiera.
+* Evitar exponer claves o secretos en el frontend.
+
+7. Implementación técnica
+
+* Usar una pila típica compatible con Replit:
+
+  * Frontend: React, Next.js o framework similar.
+  * Backend: Node.js con Express u otro framework similar.
+* Incluir:
+
+  * Middleware de autenticación.
+  * Middleware de autorización para rutas `/admin/*`.
+  * Componentes específicos para:
+
+    * AdminLayout
+    * AdminDashboard
+    * AdminUsers
+    * AdminDocuments
+    * AdminFinance
+    * AdminSettings
+    * Formulario de subida de nuevo diagrama.
+* Proveer ejemplos de:
+
+  * Cómo proteger una ruta en el frontend según rol.
+  * Cómo implementar un middleware para validar admin en el backend.
+  * Cómo llamar a los endpoints de administración desde el frontend (incluyendo el módulo financiero).
+
+8. Entregable final
+
+Entregar un área de administración completa que:
+
+* Solo sea accesible para usuarios con rol “admin”.
+* Incluya:
+
+  * Dashboard
+  * Gestión de usuarios
+  * Gestión de diagramas (incluyendo subida de nuevos PDFs y edición de metadata)
+  * Módulo de finanzas con cálculo automático mensual de suscripciones, costo operativo fijo de 89 USD y taxación del 20% sobre el gross, mostrando el neto final.
+  * Configuración general
+* Proteja todas las operaciones de administración en el backend.
+* Pueda ejecutarse y probarse directamente en Replit como parte de la aplicación principal.

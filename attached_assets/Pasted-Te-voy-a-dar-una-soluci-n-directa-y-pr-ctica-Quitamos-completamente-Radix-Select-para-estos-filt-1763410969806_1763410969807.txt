@@ -1,0 +1,307 @@
+Te voy a dar una solución directa y práctica:
+
+Quitamos completamente Radix <Select> para estos filtros.
+
+Usamos <select> nativo de HTML (100% compatible en móvil, prod, todo).
+
+Mantenemos el mismo diseño con Tailwind.
+
+Además, nos aseguramos de que la llamada a /api/diagrams/filters siempre mande las cookies.
+
+Así dejamos de pelear con el comportamiento raro en producción.
+
+🔧 Paso 1 – Reemplaza TODO SearchFilters.tsx por esta versión
+
+En Replit, abre:
+
+client/src/components/SearchFilters.tsx
+
+Selecciona todo (Cmd + A) y reemplaza por esto:
+
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Search, X } from "lucide-react";
+
+interface SearchFiltersProps {
+  onSearch: (filters: SearchFilterValues) => void;
+  onReset: () => void;
+}
+
+export interface SearchFilterValues {
+  make: string;
+  model: string;
+  year: string;
+  system: string;
+  keyword: string;
+  onlyComplete: boolean;
+}
+
+export default function SearchFilters({ onSearch, onReset }: SearchFiltersProps) {
+  const [filters, setFilters] = useState<SearchFilterValues>({
+    make: "all",
+    model: "",
+    year: "all",
+    system: "all",
+    keyword: "",
+    onlyComplete: false,
+  });
+
+  // Cargamos filtros dinámicos DESDE /api con credenciales
+  const {
+    data: filterOptions,
+    isLoading: filtersLoading,
+    isError,
+  } = useQuery<{
+    makes: string[];
+    systems: string[];
+    years: string[];
+  }>({
+    queryKey: ["/api/diagrams/filters"],
+    queryFn: async () => {
+      const res = await fetch("/api/diagrams/filters", {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error("No se pudieron cargar los filtros");
+      }
+      return res.json();
+    },
+  });
+
+  const handleSearch = () => {
+    const searchFilters = {
+      ...filters,
+      make: filters.make === "all" ? "" : filters.make,
+      year: filters.year === "all" ? "" : filters.year,
+      system: filters.system === "all" ? "" : filters.system,
+    };
+    console.log("Searching with filters:", searchFilters);
+    onSearch(searchFilters);
+  };
+
+  const handleReset = () => {
+    setFilters({
+      make: "all",
+      model: "",
+      year: "all",
+      system: "all",
+      keyword: "",
+      onlyComplete: false,
+    });
+    onReset();
+  };
+
+  const selectClassName =
+    "flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+
+  return (
+    <div className="space-y-6">
+      <div className="space-y-4">
+        {/* Palabra clave */}
+        <div className="space-y-2">
+          <Label htmlFor="keyword">Búsqueda por Palabra Clave</Label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="keyword"
+              placeholder="Buscar diagramas..."
+              className="pl-9"
+              value={filters.keyword}
+              onChange={(e) =>
+                setFilters({ ...filters, keyword: e.target.value })
+              }
+              data-testid="input-keyword"
+            />
+          </div>
+        </div>
+
+        {/* Marca */}
+        <div className="space-y-2">
+          <Label htmlFor="make">Marca</Label>
+          <select
+            id="make"
+            className={selectClassName}
+            value={filters.make}
+            onChange={(e) =>
+              setFilters({ ...filters, make: e.target.value })
+            }
+            disabled={filtersLoading}
+            data-testid="select-make"
+          >
+            <option value="all">
+              {filtersLoading ? "Cargando..." : "Todas las marcas"}
+            </option>
+            {filterOptions?.makes?.map((make) => (
+              <option key={make} value={make}>
+                {make}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Modelo */}
+        <div className="space-y-2">
+          <Label htmlFor="model">Modelo</Label>
+          <Input
+            id="model"
+            placeholder="Ingresa el modelo"
+            value={filters.model}
+            onChange={(e) =>
+              setFilters({ ...filters, model: e.target.value })
+            }
+            data-testid="input-model"
+          />
+        </div>
+
+        {/* Año */}
+        <div className="space-y-2">
+          <Label htmlFor="year">Año</Label>
+          <select
+            id="year"
+            className={selectClassName}
+            value={filters.year}
+            onChange={(e) =>
+              setFilters({ ...filters, year: e.target.value })
+            }
+            disabled={filtersLoading}
+            data-testid="select-year"
+          >
+            <option value="all">
+              {filtersLoading ? "Cargando..." : "Todos los años"}
+            </option>
+            {filterOptions?.years?.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Sistema */}
+        <div className="space-y-2">
+          <Label htmlFor="system">Sistema</Label>
+          <select
+            id="system"
+            className={selectClassName}
+            value={filters.system}
+            onChange={(e) =>
+              setFilters({ ...filters, system: e.target.value })
+            }
+            disabled={filtersLoading}
+            data-testid="select-system"
+          >
+            <option value="all">
+              {filtersLoading ? "Cargando..." : "Todos los sistemas"}
+            </option>
+            {filterOptions?.systems?.map((system) => (
+              <option key={system} value={system}>
+                {system}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Solo completos */}
+        <div className="flex items-center space-x-2 pt-2">
+          <Checkbox
+            id="only-complete"
+            checked={filters.onlyComplete}
+            onCheckedChange={(checked) =>
+              setFilters({ ...filters, onlyComplete: checked === true })
+            }
+            data-testid="checkbox-only-complete"
+          />
+          <Label
+            htmlFor="only-complete"
+            className="text-sm font-normal cursor-pointer leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          >
+            Solo diagramas completos
+          </Label>
+        </div>
+
+        {isError && (
+          <p className="text-xs text-red-400">
+            No se pudieron cargar los filtros automáticos. Puedes buscar por
+            palabra clave o modelo igualmente.
+          </p>
+        )}
+      </div>
+
+      {/* Botones */}
+      <div className="flex gap-2">
+        <Button
+          onClick={handleSearch}
+          className="flex-1"
+          data-testid="button-search"
+        >
+          <Search className="mr-2 h-4 w-4" />
+          Buscar
+        </Button>
+        <Button
+          onClick={handleReset}
+          variant="outline"
+          data-testid="button-reset"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+
+Con esto:
+
+Ya no usamos Radix Select (ni portales, ni z-index raros).
+
+Los dropdowns son <select> nativos → siempre se abren en cualquier navegador / móvil.
+
+Si /api/diagrams/filters falla en producción, igual verás el menú con la opción “Todas las marcas / años / sistemas”.
+
+fetch usa credentials: "include" para asegurarse de mandar cookies de sesión cuando estás en tecniflux.app.
+
+No toques por ahora select.tsx; ya no lo necesitamos para estos filtros.
+
+🔧 Paso 2 – Guardar y republicar
+
+En Replit: Save el archivo (Ctrl/Cmd + S).
+
+Haz clic en Republish / Publish.
+
+Espera a que diga algo tipo “Successfully deployed”.
+
+🔧 Paso 3 – Probar en producción
+
+En tu Mac o iPhone:
+
+Abre https://tecniflux.app/search.
+
+Haz login si te lo pide.
+
+En la página de búsqueda, prueba:
+
+Click en Marca → debería abrir el menú nativo del navegador.
+
+Click en Año → igual.
+
+Click en Sistema → igual.
+
+Si los filtros aún no se llenan (no ves Ford, etc.), por lo menos ya deben abrirse los dropdowns y permitirte usar “Todas las marcas / Todos los años / Todos los sistemas”.
+
+Qué hemos atacado exactamente
+
+El problema de “le doy click y no pasa nada” viene de la combinación:
+
+Radix Select + portal + CSS + diferencias entre dev y prod.
+
+Al cambiar a <select> nativo:
+
+evitamos cualquier bug de Radix / portal
+
+nos da UI nativa de iOS y Android, perfecta para tu público LATAM
+
+También reforzamos la llamada a /api/diagrams/filters para que funcione mejor en tecniflux.app con cookies.

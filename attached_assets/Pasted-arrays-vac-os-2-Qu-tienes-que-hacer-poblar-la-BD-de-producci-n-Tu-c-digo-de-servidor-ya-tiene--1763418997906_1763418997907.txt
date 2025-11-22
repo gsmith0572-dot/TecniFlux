@@ -1,0 +1,71 @@
+arrays vacíos.
+
+2. Qué tienes que hacer: poblar la BD de producción
+
+Tu código de servidor ya tiene estos endpoints:
+
+POST /api/admin/diagrams/import → importar desde un Google Sheet específico que tú le pases.
+
+POST /api/admin/diagrams/sync → sincronizar usando el Sheet “por defecto” que ya configuraron en el código.
+
+En desarrollo tú ya hiciste esto (por eso el preview tiene datos).
+En tecniflux.app hay una BD nueva, así que hay que repetir la importación, pero ahora en producción.
+
+Opción A – Usando la interfaz de Admin (lo más probable que ya exista)
+
+En https://tecniflux.app, entra como Administrador.
+
+Ve al panel de admin (seguramente una ruta tipo /admin o /admin/diagrams).
+
+Busca un botón parecido a:
+
+“Importar desde Google Sheets”
+
+o “Sincronizar diagramas”
+
+Haz click en Sincronizar / Importar y espera a que termine.
+
+Vuelve a /search y recarga la página:
+
+Ahora /api/diagrams/filters debería devolver marcas/años/sistemas.
+
+Los dropdowns se llenan y ya puedes buscar y abrir PDFs.
+
+Opción B – Si todavía no tienes UI y solo está el endpoint
+
+Puedes “disparar” el import directamente desde el navegador:
+
+Abre DevTools → pestaña Console.
+
+Pega este snippet y dale Enter:
+
+// Lanza el sync usando el Google Sheet por defecto configurado en el backend
+fetch("/api/admin/diagrams/sync", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include"
+}).then(r => r.json()).then(console.log).catch(console.error);
+
+
+Espera la respuesta en la consola. Debería mostrar algo como:
+
+{ success: true, imported: 123, updated: 0, skipped: 0 }
+
+
+Recarga /search y prueba los filtros.
+
+(Si prefieres usar el otro endpoint con un Sheet específico: también se puede, pero con el sync debería bastar porque ya traía un ID por defecto en el código.)
+
+3. Sobre el error 401 de /api/auth/me en la consola
+
+En tu última captura veo abajo:
+
+Failed to load resource: the server responded with a status of 401 () /api/auth/me
+
+Eso normalmente es porque:
+
+Algún script hace GET /api/auth/me antes de que te loguees;
+
+O desde otra pestaña donde no tienes la cookie.
+
+Mientras en Network (pestaña) veas que la última petición a /api/auth/me después del login es 200, ese 401 viejo se puede ignorar.

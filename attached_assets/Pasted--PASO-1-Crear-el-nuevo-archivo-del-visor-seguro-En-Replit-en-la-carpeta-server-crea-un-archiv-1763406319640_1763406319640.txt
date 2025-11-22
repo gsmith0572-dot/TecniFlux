@@ -1,0 +1,285 @@
+🟦 PASO 1 – Crear el nuevo archivo del visor seguro
+
+En Replit, en la carpeta server, crea un archivo nuevo llamado:
+
+server/pdf-viewer-template.ts
+
+Y pega esto tal cual:
+
+// server/pdf-viewer-template.ts
+
+export function renderSecurePDFViewer(pdfBase64: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>TecniFlux - Visor Seguro</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #05060a;
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    #wrapper {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+    }
+    #header {
+      padding: 8px 12px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: linear-gradient(90deg, #0f172a, #020617);
+      border-bottom: 1px solid #1f2933;
+    }
+    #header span.app-name {
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      color: #38bdf8;
+    }
+    #header span.note {
+      opacity: 0.8;
+      font-size: 12px;
+    }
+    #viewer {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #05060a;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="wrapper">
+    <div id="header">
+      <span class="app-name">TecniFlux • Visor seguro</span>
+      <span class="note">Sólo visualización • Descarga deshabilitada</span>
+    </div>
+    <iframe
+      id="viewer"
+      src="data:application/pdf;base64,${pdfBase64}"
+      allow="clipboard-read; clipboard-write"
+    ></iframe>
+  </div>
+</body>
+</html>
+`;
+}
+
+
+👉 Este archivo genera una página HTML con un <iframe> que carga el PDF desde un data: base64 (no desde una URL de Drive).
+No hay barra de herramientas de Google, ni botón de descargar, ni nada.
+
+🟦 PASO 2 – Importar el visor en server/routes.ts
+
+Arriba de tu archivo server/routes.ts (donde están los otros imports), agrega esta línea:
+
+import { renderSecurePDFViewer } from "./pdf-viewer-template";
+
+
+Por ejemplo, cerca de donde ya tienes:
+
+import { Readable } from "stream";
+import { storage } from "./storage";
+...
+import { importFromGoogleSheet } from "./import-sheets";
+import { renderSecurePDFViewer } from "./pdf-viewer-template";
+
+🟦 PASO 3 – Reemplazar la ruta /api/diagrams/:id/view
+
+Ahora en el MISMO server/routes.ts, busca esta parte (la que ya tienes):
+
+// Serve PDF through secure proxy (NEVER expose directUrl to frontend)
+app.get("/api/diagrams/:id/view", requireAuth, async (req, res) => {
+  const diagramId = req.params.id;
+  console.log(`[PDF Proxy] Request received for diagram: ${diagramId}`);
+  
+  try {
+    const userId = req.session!.userId!;
+    
+    // 1. Verify user exists and has active subscription
+    const user = await storage.getUser(userId);
+    if (!user) {
+      console.log(`[PDF Proxy] User not found: ${userId}`);
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+    
+    if (!user.isActive) {
+      console.log(`[PDF Proxy] User inactive: ${userId}`);
+      return res.status(403).json({ error: "Cuenta inactiva" });
+    }
+    
+    // 2. Check subscription status
+    if (user.subscriptionStatus !== 'active') {
+      console.log(`[PDF Proxy] Subscription inactive: ${userId}, status: ${user.subscriptionStatus}`);
+      return res.status(403).json({ error: "Suscripción inactiva" });
+    }
+    
+    // 3. Verify diagram exists
+    const diagram = await storage.getDiagram(diagramId);
+    if (!diagram) {
+      console.log(`[PDF Proxy] Diagram not found: ${diagramId}`);
+      return res.status(404).json({ error: "Diagrama no encontrado" });
+    }
+    
+    if (!diagram.directUrl) {
+      console.log(`[PDF Proxy] No directUrl for diagram: ${diagramId}`);
+      return res.status(404).json({ error: "URL del archivo no disponible" });
+    }
+    
+    console.log(`[PDF Proxy] Fetching PDF from Drive for diagram: ${diagramId}`);
+    
+    // 4. Fetch PDF from Google Drive (with redirect following and user-agent)
+    const response = await fetch(diagram.directUrl, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`[PDF Proxy] Failed to fetch PDF: ${response.status} ${response.statusText}`);
+      return res.status(502).json({ error: "Error al obtener el archivo" });
+    }
+    
+    console.log(`[PDF Proxy] Successfully fetched PDF, size: ${response.headers.get('content-length') || 'unknown'}`);
+    
+    // 5. Get PDF buffer (more reliable than streaming for compatibility)
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    console.log(`[PDF Proxy] PDF loaded, size: ${buffer.length} bytes, sending to client`);
+    
+    // 6. Set security headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Content-Length', buffer.length.toString());
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    
+    // 7. Send PDF
+    res.send(buffer);
+    
+  } catch (error) {
+    console.error('[PDF Proxy] Error:', error);
+    res.status(500).json({ error: "Error al servir el archivo" });
+  }
+});
+
+
+Y REEMPLÁZALO COMPLETO por esta versión:
+
+// Serve PDF through secure proxy (NEVER expose directUrl to frontend)
+// Now renders a secure HTML viewer with inline PDF (no download UI)
+app.get("/api/diagrams/:id/view", requireAuth, async (req, res) => {
+  const diagramId = req.params.id;
+  console.log(`[PDF Proxy] Request received for diagram: ${diagramId}`);
+  
+  try {
+    const userId = req.session!.userId!;
+    
+    // 1. Verify user exists and has active subscription
+    const user = await storage.getUser(userId);
+    if (!user) {
+      console.log(`[PDF Proxy] User not found: ${userId}`);
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+    
+    if (!user.isActive) {
+      console.log(`[PDF Proxy] User inactive: ${userId}`);
+      return res.status(403).json({ error: "Cuenta inactiva" });
+    }
+    
+    // 2. Check subscription status
+    if (user.subscriptionStatus !== 'active') {
+      console.log(
+        `[PDF Proxy] Subscription inactive: ${userId}, status: ${user.subscriptionStatus}`
+      );
+      return res.status(403).json({ error: "Suscripción inactiva" });
+    }
+    
+    // 3. Verify diagram exists
+    const diagram = await storage.getDiagram(diagramId);
+    if (!diagram) {
+      console.log(`[PDF Proxy] Diagram not found: ${diagramId}`);
+      return res.status(404).json({ error: "Diagrama no encontrado" });
+    }
+    
+    if (!diagram.directUrl) {
+      console.log(`[PDF Proxy] No directUrl for diagram: ${diagramId}`);
+      return res.status(404).json({ error: "URL del archivo no disponible" });
+    }
+    
+    console.log(`[PDF Proxy] Fetching PDF from Drive for diagram: ${diagramId}`);
+    
+    // 4. Fetch PDF from Google Drive
+    const response = await fetch(diagram.directUrl, {
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+    
+    if (!response.ok) {
+      console.error(
+        `[PDF Proxy] Failed to fetch PDF: ${response.status} ${response.statusText}`
+      );
+      return res.status(502).json({ error: "Error al obtener el archivo" });
+    }
+    
+    console.log(
+      `[PDF Proxy] Successfully fetched PDF, size: ${
+        response.headers.get("content-length") || "unknown"
+      }`
+    );
+    
+    // 5. Get PDF buffer
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    console.log(
+      `[PDF Proxy] PDF loaded, size: ${buffer.length} bytes, rendering secure viewer`
+    );
+    
+    // 6. Convert PDF to base64
+    const base64PDF = buffer.toString("base64");
+    
+    // 7. Render secure HTML viewer (no download UI)
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, private"
+    );
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    
+    const html = renderSecurePDFViewer(base64PDF);
+    res.send(html);
+  } catch (error) {
+    console.error("[PDF Proxy] Error:", error);
+    res.status(500).json({ error: "Error al servir el archivo" });
+  }
+});
+
+🟦 PASO 4 – Confirmar que el front ya llama a este endpoint
+
+Asegúrate de que en tu componente React donde abres el diagrama (DiagramDetailDialog.tsx), el botón “Ver diagrama” abra:
+
+window.open(`/api/diagrams/${diagram.id}/view`, "_blank");
+
+
+(o /api/diagrams/:id/view como lo tengas, pero apuntando a ESTA ruta, no a diagram.directUrl ni a fileUrl).
