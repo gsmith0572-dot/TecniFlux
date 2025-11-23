@@ -22,7 +22,6 @@ export default defineConfig({
     alias: {
       "@": "/client/src",
       "@shared": "/shared",
-      "@assets": "/attached_assets",
     },
   },
   root: "client",
