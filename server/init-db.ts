@@ -21,7 +21,7 @@ export async function initializeDatabase() {
         email: 'admin@tecniflux.com',
         password: hashedPassword,
         role: 'admin',
-        isActive: true,
+        isActive: 1, // 1 = active, 0 = inactive (integer, not boolean)
         subscriptionPlan: 'free',
         subscriptionStatus: 'active',
         searchesUsed: 0,
