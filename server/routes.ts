@@ -468,7 +468,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Find user by email
       const user = await storage.getUserByEmail(normalizedEmail);
       if (!user) {
-        // Don't reveal that email doesn't exist
         console.log(`Password reset requested for non-existent email: ${normalizedEmail}`);
         return sendResponse();
       }
@@ -656,7 +655,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Endpoint para búsqueda de diagramas en la base de datos
+  // ✅ RUTA GET (Móvil)
+  app.get("/api/diagrams/search", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      
+      const canSearch = await storage.canUserSearch(userId);
+      if (!canSearch) {
+        return res.status(403).json({ error: "Límite de búsquedas alcanzado" });
+      }
+
+      // Obtener parámetros de la URL (Query Params)
+      const query = req.query.q as string || req.query.query as string || '';
+      const make = req.query.make as string;
+      const model = req.query.model as string;
+      const year = req.query.year as string;
+      const system = req.query.system as string;
+
+      const result = await storage.smartSearchDiagrams({
+        query,
+        make,
+        model,
+        year,
+        system,
+        onlyComplete: false,
+        limit: 50,
+        offset: 0,
+      });
+
+      if (result.diagrams.length > 0) {
+        await storage.incrementSearchCount(userId);
+      }
+
+      const sanitizedResult = {
+        ...result,
+        diagrams: sanitizeDiagrams(result.diagrams)
+      };
+
+      res.json(sanitizedResult);
+    } catch (error) {
+      console.error("Search GET error:", error);
+      res.status(500).json({ error: "Error al buscar diagramas" });
+    }
+  });
+
+  // Endpoint para búsqueda de diagramas en la base de datos (Original POST - Web)
   app.post("/api/diagrams/search", requireAuth, async (req, res) => {
     try {
       const userId = req.session!.userId!;
@@ -907,6 +950,66 @@ startxref
 520
 %%EOF`;
     return Buffer.from(pdf, 'utf-8');
+  }
+
+  function generateErrorPDF(diagram: Diagram | null, userMessage: string): Buffer {
+    const line1 = "TecniFlux - Aviso de diagrama";
+    const line2 = userMessage || "No fue posible cargar este diagrama.";
+    
+    const metaLine = diagram
+      ? `ID: ${diagram.id} | ${diagram.make || 'N/A'} ${diagram.model || 'N/A'} ${diagram.year || ''} - ${diagram.system || ''}`
+      : "ID de diagrama no disponible";
+    
+    const streamLines = [
+      "BT",
+      "/F1 16 Tf",
+      "20 110 Td",
+      `(${line1.replace(/\(/g, "\\(").replace(/\)/g, "\\)")}) Tj`,
+      "0 -24 Td",
+      "/F1 12 Tf",
+      `(${line2.replace(/\(/g, "\\(").replace(/\)/g, "\\)")}) Tj`,
+      "0 -18 Td",
+      "/F1 10 Tf",
+      `(${metaLine.replace(/\(/g, "\\(").replace(/\)/g, "\\)")}) Tj`,
+      "ET"
+    ];
+    
+    const streamContent = streamLines.join("\n");
+    const length = Buffer.byteLength(streamContent, "utf-8");
+    
+    const pdf = `%PDF-1.1
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 160] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length ${length} >>
+stream
+${streamContent}
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f
+0000000010 00000 n
+0000000060 00000 n
+0000000117 00000 n
+0000000309 00000 n
+0000000416 00000 n
+trailer
+<< /Root 1 0 R /Size 6 >>
+startxref
+520
+%%EOF`;
+    return Buffer.from(pdf, "utf-8");
   }
 
   function generateErrorPDF(diagram: Diagram | null, userMessage: string): Buffer {
