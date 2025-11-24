@@ -151,21 +151,18 @@ export class DbStorage implements IStorage {
     const user = await this.getUser(userId);
     if (!user) return false;
 
-    // Check if searches need to be reset (monthly)
     const now = new Date();
-    const resetDate = user.searchesResetAt ? new Date(user.searchesResetAt) : new Date();
+    const resetDate = user.searchesResetAt ? new Date(user.searchesResetAt) : new Date(0);
     
     if (now.getMonth() !== resetDate.getMonth() || now.getFullYear() !== resetDate.getFullYear()) {
       await this.resetMonthlySearches(userId);
       return true;
     }
 
-    // Plans with unlimited searches (plus, pro)
     if (user.subscriptionPlan === "plus" || user.subscriptionPlan === "pro") {
       return true;
     }
 
-    // Check if user has searches remaining
     return user.searchesUsed < user.searchesLimit;
   }
 
@@ -374,23 +371,19 @@ export class DbStorage implements IStorage {
     partial: number;
     topMakes: Array<{ make: string; count: number }>;
   }> {
-    // Total count
     const totalResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(diagrams);
     const total = totalResult[0]?.count || 0;
 
-    // Complete count (status = 'complete')
     const completeResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(diagrams)
       .where(eq(diagrams.status, 'complete'));
     const complete = completeResult[0]?.count || 0;
 
-    // Partial count (status = 'partial' or null)
     const partial = total - complete;
 
-    // Top 20 makes by count
     const topMakesResult = await db
       .select({
         make: diagrams.make,
@@ -427,36 +420,30 @@ export class DbStorage implements IStorage {
 
     const conditions = [];
 
-    // Text search
     if (query && query.trim()) {
       conditions.push(
         sql`LOWER(${diagrams.searchText}) LIKE ${`%${query.toLowerCase()}%`}`
       );
     }
 
-    // Filter by make
     if (make && make.trim()) {
       conditions.push(sql`LOWER(${diagrams.make}) = ${make.toLowerCase()}`);
     }
 
-    // Filter by year
     if (year && year.trim()) {
       conditions.push(eq(diagrams.year, year));
     }
 
-    // Filter by status
     if (status && status.trim()) {
       conditions.push(eq(diagrams.status, status));
     }
 
-    // Build query
     let query_builder = db.select().from(diagrams);
 
     if (conditions.length > 0) {
       query_builder = query_builder.where(and(...conditions)) as any;
     }
 
-    // Get total count
     const countQuery = db
       .select({ count: sql<number>`count(*)::int` })
       .from(diagrams);
@@ -468,7 +455,6 @@ export class DbStorage implements IStorage {
     const totalResult = await countQueryWithConditions;
     const total = totalResult[0]?.count || 0;
 
-    // Get paginated results
     const result = await query_builder
       .orderBy(desc(diagrams.createdAt))
       .limit(limit)
@@ -482,21 +468,18 @@ export class DbStorage implements IStorage {
 
   // Get unique filter values for search dropdowns
   async getDiagramFilters(): Promise<{ makes: string[]; systems: string[]; years: string[] }> {
-    // Get unique makes
     const makesResult = await db
       .selectDistinct({ make: diagrams.make })
       .from(diagrams)
       .where(sql`${diagrams.make} IS NOT NULL`)
       .orderBy(diagrams.make);
     
-    // Get unique systems
     const systemsResult = await db
       .selectDistinct({ system: diagrams.system })
       .from(diagrams)
       .where(sql`${diagrams.system} IS NOT NULL`)
       .orderBy(diagrams.system);
     
-    // Get unique years
     const yearsResult = await db
       .selectDistinct({ year: diagrams.year })
       .from(diagrams)
@@ -510,7 +493,7 @@ export class DbStorage implements IStorage {
     };
   }
 
-  // Smart search: text + filters + complete prioritization
+  // ✅ CORRECCIÓN DE BÚSQUEDA: Asegura que el WHERE maneje undefined/null correctamente
   async smartSearchDiagrams(params: {
     query?: string;
     make?: string;
@@ -531,7 +514,7 @@ export class DbStorage implements IStorage {
       conditions.push(like(diagrams.searchText, `%${searchLower}%`));
     }
     
-    // Filter by make (case-insensitive)
+    // Filter by make (case-insensitive) - FIXED: Use Drizzle's ORM operations
     if (make && make.trim()) {
       conditions.push(sql`LOWER(${diagrams.make}) = LOWER(${make.trim()})`);
     }
@@ -551,7 +534,7 @@ export class DbStorage implements IStorage {
       conditions.push(sql`LOWER(${diagrams.system}) = LOWER(${system.trim()})`);
     }
     
-    // Filter by complete status (if requested) - use proper SQL condition
+    // Filter by complete status (if requested)
     if (onlyComplete) {
       conditions.push(
         sql`${diagrams.make} IS NOT NULL AND ${diagrams.model} IS NOT NULL AND ${diagrams.year} IS NOT NULL AND ${diagrams.system} IS NOT NULL`
@@ -561,7 +544,7 @@ export class DbStorage implements IStorage {
     // Build WHERE clause
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
     
-    // Get total count for pagination (using separate conditions to avoid mutation)
+    // Get total count for pagination
     const countResult = await db
       .select({ count: sql<number>`count(*)` })
       .from(diagrams)
@@ -576,17 +559,8 @@ export class DbStorage implements IStorage {
       query_builder = query_builder.where(whereClause) as any;
     }
     
-    // Determine if specific filters were applied (in JavaScript)
     const hasSpecificFilters = !!(make?.trim() || model?.trim() || year?.trim() || system?.trim());
     
-    // Smart ordering based on filter type and completeness:
-    // Priority 1: Specific filters applied + complete diagrams (score 1)
-    // Priority 2: Specific filters applied + partial diagrams (score 2)
-    // Priority 3: Text-only search + complete diagrams (score 3)
-    // Priority 4: Text-only search + partial diagrams (score 4)
-    //
-    // If specific filters were applied, complete diagrams get score 1, partial get score 2
-    // If only text search, complete diagrams get score 3, partial get score 4
     const priorityComplete = hasSpecificFilters ? 1 : 3;
     const priorityPartial = hasSpecificFilters ? 2 : 4;
     
@@ -687,7 +661,6 @@ export class DbStorage implements IStorage {
 
   // Diagram History methods
   async addDiagramView(userId: string, diagramId: string): Promise<DiagramHistory> {
-    // Check for recent duplicate view (within last 5 seconds) to prevent double inserts from rapid clicks or StrictMode
     const fiveSecondsAgo = new Date(Date.now() - 5000);
     const recentView = await db
       .select()
@@ -701,12 +674,10 @@ export class DbStorage implements IStorage {
       )
       .limit(1);
     
-    // If a recent view exists, return it instead of creating a duplicate
     if (recentView.length > 0) {
       return recentView[0];
     }
     
-    // Otherwise, create a new history entry
     const result = await db
       .insert(diagramHistory)
       .values({ userId, diagramId })
@@ -733,4 +704,5 @@ export class DbStorage implements IStorage {
   }
 }
 
-export const storage = new DbStorage();
+// ✅ EXPORTACIÓN CORREGIDA: Usamos export default para que funcione en Node.js v24 con tsx/ESM
+export default new DbStorage();

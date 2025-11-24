@@ -2,7 +2,7 @@ import type { Express, Response } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
 import { Readable } from "stream";
-import { storage } from "./storage";
+import storage from "./storage";
 import { searchVehicleResources, searchByVIN } from "./gemini";
 import Stripe from "stripe";
 import { 

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
-import { storage } from "./storage";
+import storage from "./storage"; // ✅ CORRECCIÓN: Importación por defecto (sin llaves)
 
 // Extend Express Request type to include session userId and user
 declare module 'express-session' {
@@ -36,7 +36,8 @@ export function requireRole(role: string) {
       return res.status(401).json({ error: "No autenticado" });
     }
 
-    const user = await storage.getUser(req.session.userId);
+    // Usar la instancia 'storage' importada por defecto
+    const user = await storage.getUser(req.session.userId); 
     if (!user) {
       return res.status(401).json({ error: "Usuario no encontrado" });
     }
