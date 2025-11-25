@@ -666,7 +666,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ✅ RUTA GET (Móvil)
-  app.get("/api/diagrams/search", authenticateJWT, async (req, res) => {
+  app.get("/api/diagrams/search", requireAuth, async (req, res) => {
     try {
       const userId = req.session!.userId!;
       
