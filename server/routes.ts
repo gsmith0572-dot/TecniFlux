@@ -1820,7 +1820,7 @@ startxref
   });
 
   // Admin Diagrams - Import from Google Sheets
-  app.post("/api/admin/diagrams/import", requireAuth, requireRole('admin'), async (req, res) => {
+  app.post("/api/admin/diagrams/import", authenticateJWT, requireRole('admin'), async (req, res) => {
     try {
       const schema = z.object({
         spreadsheetId: z.string().min(1, "Spreadsheet ID es requerido"),
