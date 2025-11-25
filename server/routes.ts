@@ -409,11 +409,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Error al iniciar sesión" });
     }
   });
-      console.error('Login error:', error);
-      res.status(500).json({ error: "Error al iniciar sesión" });
-    }
-  });
-
   // Logout
   app.post("/api/auth/logout", (req, res) => {
     req.session.destroy((err) => {
