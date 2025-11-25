@@ -710,6 +710,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Endpoint para obtener un diagrama por ID
+  app.get("/api/diagrams/:id", authenticateJWT, async (req, res) => {
+    try {
+      const diagramId = req.params.id;
+
+      // Validar que el ID no esté vacío
+      if (!diagramId || diagramId.trim() === '') {
+        return res.status(400).json({ error: "ID de diagrama inválido" });
+      }
+
+      // Obtener diagrama desde la base de datos
+      const diagram = await storage.getDiagram(diagramId);
+
+      if (!diagram) {
+        return res.status(404).json({ error: "Diagrama no encontrado" });
+      }
+
+      // Responder con el diagrama completo (incluyendo URLs)
+      res.json({ 
+        diagram: {
+          id: diagram.id,
+          fileName: diagram.fileName,
+          fileId: diagram.fileId,
+          fileUrl: diagram.fileUrl,
+          directUrl: diagram.directUrl,
+          make: diagram.make,
+          model: diagram.model,
+          year: diagram.year,
+          system: diagram.system,
+          status: diagram.status,
+          tags: diagram.tags,
+          notes: diagram.notes,
+          createdAt: diagram.createdAt,
+          updatedAt: diagram.updatedAt,
+        }
+      });
+    } catch (error) {
+      console.error("Get diagram by ID error:", error);
+      res.status(500).json({ error: "Error al obtener diagrama" });
+    }
+  });
+
   // Endpoint para búsqueda de diagramas en la base de datos (Original POST - Web)
   app.post("/api/diagrams/search", requireAuth, async (req, res) => {
     try {
@@ -961,66 +1003,6 @@ startxref
 520
 %%EOF`;
     return Buffer.from(pdf, 'utf-8');
-  }
-
-  function generateErrorPDF(diagram: Diagram | null, userMessage: string): Buffer {
-    const line1 = "TecniFlux - Aviso de diagrama";
-    const line2 = userMessage || "No fue posible cargar este diagrama.";
-    
-    const metaLine = diagram
-      ? `ID: ${diagram.id} | ${diagram.make || 'N/A'} ${diagram.model || 'N/A'} ${diagram.year || ''} - ${diagram.system || ''}`
-      : "ID de diagrama no disponible";
-    
-    const streamLines = [
-      "BT",
-      "/F1 16 Tf",
-      "20 110 Td",
-      `(${line1.replace(/\(/g, "\\(").replace(/\)/g, "\\)")}) Tj`,
-      "0 -24 Td",
-      "/F1 12 Tf",
-      `(${line2.replace(/\(/g, "\\(").replace(/\)/g, "\\)")}) Tj`,
-      "0 -18 Td",
-      "/F1 10 Tf",
-      `(${metaLine.replace(/\(/g, "\\(").replace(/\)/g, "\\)")}) Tj`,
-      "ET"
-    ];
-    
-    const streamContent = streamLines.join("\n");
-    const length = Buffer.byteLength(streamContent, "utf-8");
-    
-    const pdf = `%PDF-1.1
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 160] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
-endobj
-4 0 obj
-<< /Length ${length} >>
-stream
-${streamContent}
-endstream
-endobj
-5 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
-endobj
-xref
-0 6
-0000000000 65535 f
-0000000010 00000 n
-0000000060 00000 n
-0000000117 00000 n
-0000000309 00000 n
-0000000416 00000 n
-trailer
-<< /Root 1 0 R /Size 6 >>
-startxref
-520
-%%EOF`;
-    return Buffer.from(pdf, "utf-8");
   }
 
   function generateErrorPDF(diagram: Diagram | null, userMessage: string): Buffer {
