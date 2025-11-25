@@ -1,3 +1,4 @@
+import jwt from "jsonwebtoken";
 import type { Express, Response } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
@@ -337,63 +338,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Login
   app.post("/api/auth/login", async (req, res) => {
     try {
       const loginSchema = z.object({
         username: z.string(),
         password: z.string(),
       });
-
       const { username, password } = loginSchema.parse(req.body);
-
+      
       // Find user
       const user = await storage.getUserByUsername(username);
       if (!user) {
         return res.status(401).json({ error: "Credenciales inválidas" });
       }
-
+      
       // Check if account is active
       if (user.isActive === 0) {
         return res.status(403).json({ error: "Cuenta desactivada. Contacte al administrador." });
       }
-
+      
       // Verify password
       const isValid = await verifyPassword(password, user.password);
       if (!isValid) {
         return res.status(401).json({ error: "Credenciales inválidas" });
       }
-
-      // Regenerate session to prevent fixation attacks
+      
+      // Generate JWT token
+      const token = jwt.sign(
+        { 
+          userId: user.id, 
+          username: user.username,
+          role: user.role 
+        },
+        process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+        { expiresIn: '7d' }
+      );
+      
+      // Also maintain session for web compatibility
       req.session.regenerate((err) => {
         if (err) {
           console.error('Session regeneration error:', err);
-          return res.status(500).json({ error: "Error al iniciar sesión" });
         }
-
         req.session.userId = user.id;
         req.session.save((saveErr) => {
           if (saveErr) {
             console.error('Session save error:', saveErr);
-            return res.status(500).json({ error: "Error al guardar sesión" });
           }
-
-          // Update last access
-          storage.updateLastAccess(user.id);
-
-          res.json({
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            role: user.role,
-            subscriptionPlan: user.subscriptionPlan,
-          });
         });
+      });
+      
+      // Update last access
+      storage.updateLastAccess(user.id);
+      
+      // Return user data + JWT token
+      res.json({
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          subscriptionPlan: user.subscriptionPlan,
+        },
+        token: token
       });
     } catch (error: any) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Datos inválidos" });
       }
+      console.error('Login error:', error);
+      res.status(500).json({ error: "Error al iniciar sesión" });
+    }
+  });
       console.error('Login error:', error);
       res.status(500).json({ error: "Error al iniciar sesión" });
     }
