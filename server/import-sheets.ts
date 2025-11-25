@@ -7,27 +7,10 @@ async function getGoogleSheetClient() {
   const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   
   if (!serviceAccountKey) {
-    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY not found in environment variables');
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY not found in environment');
   }
 
-  let credentials;
-  try {
-    credentials = JSON.parse(serviceAccountKey);
-  } catch (parseError) {
-    try {
-      const cleaned = serviceAccountKey.trim().replace(/\\n/g, '').replace(/\\r/g, '');
-      credentials = JSON.parse(cleaned);
-    } catch (cleanError) {
-      console.error('❌ Error parsing GOOGLE_SERVICE_ACCOUNT_KEY');
-      console.error('Key length:', serviceAccountKey.length);
-      console.error('Key starts with:', serviceAccountKey.substring(0, 50));
-      throw new Error('Invalid GOOGLE_SERVICE_ACCOUNT_KEY format');
-    }
-  }
-  
-  if (!credentials.client_email || !credentials.private_key) {
-    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY missing required fields');
-  }
+  const credentials = JSON.parse(serviceAccountKey);
   
   const auth = new google.auth.GoogleAuth({
     credentials,
@@ -55,14 +38,14 @@ interface SheetRow {
 export async function importFromGoogleSheet(spreadsheetId: string, sheetName: string = 'Sheet1') {
   try {
     console.log('🔄 Iniciando importación desde Google Sheets...');
-    console.log(\`📊 Spreadsheet ID: \${spreadsheetId}\`);
-    console.log(\`📄 Hoja: \${sheetName}\`);
+    console.log(`📊 Spreadsheet ID: ${spreadsheetId}`);
+    console.log(`📄 Hoja: ${sheetName}`);
 
     const sheets = await getGoogleSheetClient();
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: spreadsheetId,
-      range: \`\${sheetName}!A:I\`,
+      range: `${sheetName}!A:I`,
     });
 
     const rows = response.data.values;
@@ -72,8 +55,8 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
       return { success: false, message: 'No hay datos en el sheet' };
     }
 
-    const headers = rows[0].map(h => h.toLowerCase().replace(/\\s+/g, '_'));
-    console.log(\`📋 Columnas encontradas: \${headers.join(', ')}\`);
+    const headers = rows[0].map(h => h.toLowerCase().replace(/\s+/g, '_'));
+    console.log(`📋 Columnas encontradas: ${headers.join(', ')}`);
 
     const data: SheetRow[] = [];
     for (let i = 1; i < rows.length; i++) {
@@ -102,7 +85,7 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
       }
     }
 
-    console.log(\`✅ \${data.length} diagramas válidos encontrados\`);
+    console.log(`✅ ${data.length} diagramas válidos encontrados`);
 
     if (data.length === 0) {
       return { success: false, message: 'No se encontraron diagramas válidos' };
@@ -114,8 +97,8 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
     });
     const uniqueData = Array.from(deduped.values());
     
-    console.log(\`⚠️  \${data.length - uniqueData.length} duplicados eliminados\`);
-    console.log(\`✅ \${uniqueData.length} diagramas únicos para importar\`);
+    console.log(`⚠️  ${data.length - uniqueData.length} duplicados eliminados`);
+    console.log(`✅ ${uniqueData.length} diagramas únicos para importar`);
 
     const batchSize = 500;
     let totalProcessed = 0;
@@ -151,30 +134,30 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
         .onConflictDoUpdate({
           target: diagrams.fileId,
           set: {
-            fileName: sql\`EXCLUDED.file_name\`,
-            fileUrl: sql\`EXCLUDED.file_url\`,
-            directUrl: sql\`EXCLUDED.direct_url\`,
-            make: sql\`EXCLUDED.make\`,
-            model: sql\`EXCLUDED.model\`,
-            year: sql\`EXCLUDED.year\`,
-            system: sql\`EXCLUDED.system\`,
-            status: sql\`EXCLUDED.status\`,
-            tags: sql\`EXCLUDED.tags\`,
-            notes: sql\`EXCLUDED.notes\`,
-            searchText: sql\`EXCLUDED.search_text\`,
+            fileName: sql`EXCLUDED.file_name`,
+            fileUrl: sql`EXCLUDED.file_url`,
+            directUrl: sql`EXCLUDED.direct_url`,
+            make: sql`EXCLUDED.make`,
+            model: sql`EXCLUDED.model`,
+            year: sql`EXCLUDED.year`,
+            system: sql`EXCLUDED.system`,
+            status: sql`EXCLUDED.status`,
+            tags: sql`EXCLUDED.tags`,
+            notes: sql`EXCLUDED.notes`,
+            searchText: sql`EXCLUDED.search_text`,
             updatedAt: new Date(),
           }
         });
 
       totalProcessed += batch.length;
-      console.log(\`📥 Procesados \${totalProcessed}/\${uniqueData.length} diagramas...\`);
+      console.log(`📥 Procesados ${totalProcessed}/${uniqueData.length} diagramas...`);
     }
 
-    console.log(\`✅ Importación completada: \${totalProcessed} diagramas\`);
+    console.log(`✅ Importación completada: ${totalProcessed} diagramas`);
 
     return {
       success: true,
-      message: \`\${totalProcessed} diagramas importados/actualizados\`,
+      message: `${totalProcessed} diagramas importados/actualizados`,
       imported: totalProcessed,
       updated: 0,
       total: totalProcessed
