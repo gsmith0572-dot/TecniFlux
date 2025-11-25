@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { authenticateJWT } from "./jwt-middleware";
 import type { Express, Response } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
@@ -666,7 +667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ✅ RUTA GET (Móvil)
-  app.get("/api/diagrams/search", requireAuth, async (req, res) => {
+  app.get("/api/diagrams/search", authenticateJWT, async (req, res) => {
     try {
       const userId = req.session!.userId!;
       
