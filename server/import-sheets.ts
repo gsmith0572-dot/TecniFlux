@@ -3,51 +3,22 @@ import { sql } from 'drizzle-orm';
 import { db } from './db';
 import { diagrams } from '../shared/schema';
 
-let connectionSettings: any;
-
-async function getAccessToken() {
-  if (connectionSettings && connectionSettings.settings.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
-    return connectionSettings.settings.access_token;
-  }
-  
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY 
-    ? 'repl ' + process.env.REPL_IDENTITY 
-    : process.env.WEB_REPL_RENEWAL 
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
-  }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-sheet',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
-      }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  const accessToken = connectionSettings?.settings?.access_token || connectionSettings.settings?.oauth?.credentials?.access_token;
-
-  if (!connectionSettings || !accessToken) {
-    throw new Error('Google Sheet not connected');
-  }
-  return accessToken;
-}
-
 async function getGoogleSheetClient() {
-  const accessToken = await getAccessToken();
+  const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  
+  if (!serviceAccountKey) {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY not found in environment');
+  }
 
-  const oauth2Client = new google.auth.OAuth2();
-  oauth2Client.setCredentials({
-    access_token: accessToken
+  const credentials = JSON.parse(serviceAccountKey);
+  
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
   });
 
-  return google.sheets({ version: 'v4', auth: oauth2Client });
+  const client = await auth.getClient();
+  return google.sheets({ version: 'v4', auth: client });
 }
 
 interface SheetRow {
@@ -72,10 +43,9 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
 
     const sheets = await getGoogleSheetClient();
 
-    // Leer datos del sheet - hasta columna I para incluir status
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: spreadsheetId,
-      range: `${sheetName}!A:I`, // A-H son los campos originales, I es status
+      range: `${sheetName}!A:I`,
     });
 
     const rows = response.data.values;
@@ -85,11 +55,9 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
       return { success: false, message: 'No hay datos en el sheet' };
     }
 
-    // Primera fila son los encabezados
     const headers = rows[0].map(h => h.toLowerCase().replace(/\s+/g, '_'));
     console.log(`📋 Columnas encontradas: ${headers.join(', ')}`);
 
-    // Convertir filas a objetos - IMPORTAR TODAS LAS FILAS
     const data: SheetRow[] = [];
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
@@ -100,7 +68,6 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
         obj[header] = row[index] || '';
       });
 
-      // Solo validar campos OBLIGATORIOS: file_name, file_id, direct_url
       if (obj.file_name && obj.file_id && obj.direct_url) {
         data.push({
           fileName: obj.file_name,
@@ -111,7 +78,7 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
           model: obj.model || null,
           year: obj.year ? obj.year.toString() : null,
           system: obj.system || null,
-          status: obj.status || 'partial', // Default a 'partial' si no existe
+          status: obj.status || 'partial',
           tags: obj.tags || null,
           notes: obj.notes || null,
         } as any);
@@ -124,26 +91,23 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
       return { success: false, message: 'No se encontraron diagramas válidos' };
     }
 
-    // DEDUPLICAR por file_id (mantener el último registro de cada file_id)
     const deduped = new Map<string, SheetRow>();
     data.forEach(diagram => {
       deduped.set(diagram.fileId, diagram);
     });
     const uniqueData = Array.from(deduped.values());
     
-    console.log(`⚠️  ${data.length - uniqueData.length} duplicados eliminados (file_id repetidos)`);
+    console.log(`⚠️  ${data.length - uniqueData.length} duplicados eliminados`);
     console.log(`✅ ${uniqueData.length} diagramas únicos para importar`);
 
-    // Insertar/actualizar en la base de datos en lotes usando ON CONFLICT (UPSERT rápido)
-    const batchSize = 500; // Incrementar tamaño de batch
+    const batchSize = 500;
     let totalProcessed = 0;
 
-    console.log('💾 Insertando en lotes con ON CONFLICT...');
+    console.log('💾 Insertando en lotes...');
 
     for (let i = 0; i < uniqueData.length; i += batchSize) {
       const batch = uniqueData.slice(i, i + batchSize);
       
-      // Preparar valores con searchText calculado
       const valuesToInsert = batch.map(diagram => ({
         fileName: diagram.fileName,
         fileId: diagram.fileId,
@@ -165,7 +129,6 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
         ].filter(Boolean).join(' ').toLowerCase(),
       }));
 
-      // Ejecutar INSERT con ON CONFLICT DO UPDATE usando Drizzle
       await db.insert(diagrams)
         .values(valuesToInsert)
         .onConflictDoUpdate({
@@ -190,17 +153,14 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
       console.log(`📥 Procesados ${totalProcessed}/${uniqueData.length} diagramas...`);
     }
 
-    const imported = totalProcessed;
-    const updated = 0; // No podemos distinguir en batch, pero el total es correcto
-
-    console.log(`✅ Importación completada: ${imported} nuevos + ${updated} actualizados`);
+    console.log(`✅ Importación completada: ${totalProcessed} diagramas`);
 
     return {
       success: true,
-      message: `${imported} diagramas nuevos, ${updated} actualizados`,
-      imported: imported,
-      updated: updated,
-      total: imported + updated
+      message: `${totalProcessed} diagramas importados/actualizados`,
+      imported: totalProcessed,
+      updated: 0,
+      total: totalProcessed
     };
 
   } catch (error) {
@@ -212,14 +172,3 @@ export async function importFromGoogleSheet(spreadsheetId: string, sheetName: st
     };
   }
 }
-
-// Script de línea de comandos (ejecutar con: tsx server/import-sheets.ts SPREADSHEET_ID SHEET_NAME)
-// Comentado para evitar problemas con ESM imports
-// const spreadsheetId = process.argv[2];
-// const sheetName = process.argv[3] || 'Sheet1';
-//
-// if (spreadsheetId) {
-//   importFromGoogleSheet(spreadsheetId, sheetName)
-//     .then((result) => console.log('\n📊 Resultado:', result))
-//     .catch((error) => console.error('\n❌ Error:', error));
-// }
