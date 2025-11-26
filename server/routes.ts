@@ -763,6 +763,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Endpoint para obtener un diagrama por ID
+  app.get("/api/diagrams/:id", authenticateJWT, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        return res.status(400).json({ error: "ID requerido" });
+      }
+
+      const diagram = await storage.getDiagram(id);
+
+      if (!diagram) {
+        return res.status(404).json({ error: "Diagrama no encontrado" });
+      }
+
+      res.json({ diagram });
+    } catch (error: any) {
+      console.error('Error obteniendo diagrama:', error);
+      res.status(500).json({ error: "Error obteniendo diagrama" });
+    }
+  });
+
   // Endpoint para búsqueda web con Gemini basada en filtros de vehículo
   app.post("/api/search/web", requireAuth, async (req, res) => {
     try {
