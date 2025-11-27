@@ -713,7 +713,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Endpoint para búsqueda de diagramas en la base de datos (Original POST - Web)
-  app.post("/api/diagrams/search", requireAuth, async (req, res) => {
+  app.post("/api/diagrams/search", authenticateJWT, async (req, res) => {
     try {
       const userId = req.session!.userId!;
       
