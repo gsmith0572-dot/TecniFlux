@@ -684,7 +684,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ✅ RUTA GET (Móvil)
   app.get("/api/diagrams/search", authenticateJWT, async (req, res) => {
     try {
-      const userId = req.session!.userId!;
+      const userId = (req as any).userId;
       
       // TEMPORAL: Validación de límite de búsquedas deshabilitada para desarrollo
       // TODO: Re-habilitar cuando se implementen límites reales
@@ -730,7 +730,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Endpoint para búsqueda de diagramas en la base de datos (Original POST - Web)
   app.post("/api/diagrams/search", authenticateJWT, async (req, res) => {
     try {
-      const userId = req.session!.userId!;
+      const userId = (req as any).userId;
       
       // TEMPORAL: Validación de límite de búsquedas deshabilitada para desarrollo
       // TODO: Re-habilitar cuando se implementen límites reales
@@ -803,7 +803,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Endpoint para búsqueda web con Gemini basada en filtros de vehículo
   app.post("/api/search/web", requireAuth, async (req, res) => {
     try {
-      const userId = req.session!.userId!;
+      const userId = (req as any).userId;
       
       // Check if user can search
       const canSearch = await storage.canUserSearch(userId);
@@ -846,7 +846,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Endpoint para búsqueda web con Gemini basada en VIN
   app.post("/api/search/vin", requireAuth, async (req, res) => {
     try {
-      const userId = req.session!.userId!;
+      const userId = (req as any).userId;
       
       // Check if user can search
       const canSearch = await storage.canUserSearch(userId);
@@ -887,7 +887,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Record diagram view (called when user views a PDF)
   app.post("/api/diagrams/:id/view", requireAuth, async (req, res) => {
     try {
-      const userId = req.session!.userId!;
+      const userId = (req as any).userId;
       const diagramId = req.params.id;
       
       // Verify diagram exists
@@ -912,7 +912,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log(`[PDF View] Request received for diagram: ${diagramId}`);
     
     try {
-      const userId = req.session!.userId!;
+      const userId = (req as any).userId;
       
       // 1. Verify user exists and has active subscription
       const user = await storage.getUser(userId);
@@ -1072,7 +1072,7 @@ startxref
       let diagram: Diagram | null = null;
       
       try {
-        const userId = req.session!.userId!;
+        const userId = (req as any).userId;
   
         // 1. Verify user exists and has active subscription
         const user = await storage.getUser(userId);
@@ -1233,7 +1233,7 @@ startxref
   // Get user's view history (last 3 diagrams)
   app.get("/api/user/history", requireAuth, async (req, res) => {
     try {
-      const userId = req.session!.userId!;
+      const userId = (req as any).userId;
       const limit = parseInt(req.query.limit as string) || 3;
       
       const history = await storage.getUserHistory(userId, limit);
@@ -1284,9 +1284,9 @@ startxref
   });
 
   // Stripe: Create subscription
-  app.post("/api/create-subscription", requireAuth, async (req, res) => {
+  app.post("/api/create-subscription", authenticateJWT, async (req, res) => {
     try {
-      const userId = req.session!.userId!;
+      const userId = (req as any).userId;
 
       const { planId } = req.body;
 
