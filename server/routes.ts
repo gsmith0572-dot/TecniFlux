@@ -1277,6 +1277,38 @@ startxref
     
   // Get user's view history (last 3 diagrams)
   app.get("/api/user/history", requireAuth, async (req, res) => {
+
+  // Get user subscription status
+  app.get("/api/user/subscription", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      
+      const result = await pool.query(
+        "SELECT plan, status, current_period_end, cancel_at_period_end FROM subscriptions WHERE user_id = $1",
+        [userId]
+      );
+      
+      if (result.rows.length === 0) {
+        return res.json({
+          plan: "free",
+          status: "active",
+          currentPeriodEnd: new Date(Date.now() + 30*24*60*60*1000).toISOString(),
+          cancelAtPeriodEnd: false
+        });
+      }
+      
+      const sub = result.rows[0];
+      res.json({
+        plan: sub.plan,
+        status: sub.status,
+        currentPeriodEnd: sub.current_period_end,
+        cancelAtPeriodEnd: sub.cancel_at_period_end
+      });
+    } catch (error) {
+      console.error("Error getting subscription:", error);
+      res.status(500).json({ error: "Error al obtener suscripción" });
+    }
+  });
     try {
       const userId = req.session!.userId!;
       const limit = parseInt(req.query.limit as string) || 3;
