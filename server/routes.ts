@@ -26,6 +26,7 @@ import { passwordResetLimiter, usernameReminderLimiter, checkEmailRateLimit } fr
 import type { Diagram } from "../shared/schema";
 import { importFromGoogleSheet } from "./import-sheets";
 import { renderSecurePDFViewer } from "./pdf-viewer-template";
+import { pool } from "./db";
 
 // Configure multer for PDF uploads (memory storage, 10MB limit)
 const upload = multer({
@@ -364,6 +365,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Credenciales inválidas" });
       }
       
+      // Query subscription from subscriptions table
+      let subscriptionPlan = 'free'; // default
+      try {
+        const subResult = await pool.query(
+          "SELECT plan FROM subscriptions WHERE user_id = $1",
+          [user.id]
+        );
+        if (subResult.rows.length > 0) {
+          subscriptionPlan = subResult.rows[0].plan;
+        }
+      } catch (subError) {
+        console.error('Error checking subscription:', subError);
+      }
+      
       // Generate JWT token
       const token = jwt.sign(
         { 
@@ -398,7 +413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           username: user.username,
           email: user.email,
           role: user.role,
-          subscriptionPlan: user.subscriptionPlan,
+          subscriptionPlan: subscriptionPlan,
         },
         token: token
       });
