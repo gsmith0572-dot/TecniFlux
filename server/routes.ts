@@ -364,6 +364,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Credenciales inválidas" });
       }
       
+      // Check subscription from subscriptions table
+      const subResult = await pool.query(
+        "SELECT plan FROM subscriptions WHERE user_id = $1",
+        [user.id]
+      );
+      const subscriptionPlan = subResult.rows.length > 0 ? subResult.rows[0].plan : 'free';
+      
       // Generate JWT token
       const token = jwt.sign(
         { 
@@ -391,14 +398,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update last access
       storage.updateLastAccess(user.id);
       
-      // Return user data + JWT token
+      // Return user data + JWT token with REAL subscription plan
       res.json({
         user: {
           id: user.id,
           username: user.username,
           email: user.email,
           role: user.role,
-          subscriptionPlan: user.subscriptionPlan,
+          subscriptionPlan: subscriptionPlan,
         },
         token: token
       });
@@ -410,8 +417,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Error al iniciar sesión" });
     }
   });
-  // Logout
-  app.post("/api/auth/logout", (req, res) => {
     req.session.destroy((err) => {
       if (err) {
         return res.status(500).json({ error: "Error al cerrar sesión" });
