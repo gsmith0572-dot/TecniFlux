@@ -1252,7 +1252,7 @@ startxref
   });
 
   // Get user subscription status
-  app.get("/api/user/subscription", requireAuth, async (req, res) => {
+  app.get("/api/user/subscription", authenticateJWT, async (req, res) => {
     try {
       const userId = (req as any).userId;
       
