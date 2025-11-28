@@ -1064,66 +1064,6 @@ startxref
     return Buffer.from(pdf, "utf-8");
   }
 
-  function generateErrorPDF(diagram: Diagram | null, userMessage: string): Buffer {
-    const line1 = "TecniFlux - Aviso de diagrama";
-    const line2 = userMessage || "No fue posible cargar este diagrama.";
-    
-    const metaLine = diagram
-      ? `ID: ${diagram.id} | ${diagram.make || 'N/A'} ${diagram.model || 'N/A'} ${diagram.year || ''} - ${diagram.system || ''}`
-      : "ID de diagrama no disponible";
-    
-    const streamLines = [
-      "BT",
-      "/F1 16 Tf",
-      "20 110 Td",
-      `(${line1.replace(/\(/g, "\\(").replace(/\)/g, "\\)")}) Tj`,
-      "0 -24 Td",
-      "/F1 12 Tf",
-      `(${line2.replace(/\(/g, "\\(").replace(/\)/g, "\\)")}) Tj`,
-      "0 -18 Td",
-      "/F1 10 Tf",
-      `(${metaLine.replace(/\(/g, "\\(").replace(/\)/g, "\\)")}) Tj`,
-      "ET"
-    ];
-    
-    const streamContent = streamLines.join("\n");
-    const length = Buffer.byteLength(streamContent, "utf-8");
-    
-    const pdf = `%PDF-1.1
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 160] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
-endobj
-4 0 obj
-<< /Length ${length} >>
-stream
-${streamContent}
-endstream
-endobj
-5 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
-endobj
-xref
-0 6
-0000000000 65535 f
-0000000010 00000 n
-0000000060 00000 n
-0000000117 00000 n
-0000000309 00000 n
-0000000416 00000 n
-trailer
-<< /Root 1 0 R /Size 6 >>
-startxref
-520
-%%EOF`;
-    return Buffer.from(pdf, "utf-8");
-  }
-
     // Serve raw PDF through secure proxy (used ONLY by the internal viewer iframe)
     app.get("/api/diagrams/:id/file", requireAuth, async (req, res) => {
       const diagramId = req.params.id;
@@ -1292,6 +1232,24 @@ startxref
     
   // Get user's view history (last 3 diagrams)
   app.get("/api/user/history", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const limit = parseInt(req.query.limit as string) || 3;
+      
+      const history = await storage.getUserHistory(userId, limit);
+      
+      // Sanitize diagrams in history
+      const sanitizedHistory = history.map(item => ({
+        ...item,
+        diagram: item.diagram ? sanitizeDiagram(item.diagram) : null
+      }));
+      
+      res.json({ history: sanitizedHistory });
+    } catch (error) {
+      console.error('Error getting user history:', error);
+      res.status(500).json({ error: "Error al obtener historial" });
+    }
+  });
 
   // Get user subscription status
   app.get("/api/user/subscription", requireAuth, async (req, res) => {
@@ -1322,24 +1280,6 @@ startxref
     } catch (error) {
       console.error("Error getting subscription:", error);
       res.status(500).json({ error: "Error al obtener suscripción" });
-    }
-  });
-    try {
-      const userId = req.session!.userId!;
-      const limit = parseInt(req.query.limit as string) || 3;
-      
-      const history = await storage.getUserHistory(userId, limit);
-      
-      // Sanitize diagrams in history
-      const sanitizedHistory = history.map(item => ({
-        ...item,
-        diagram: item.diagram ? sanitizeDiagram(item.diagram) : null
-      }));
-      
-      res.json({ history: sanitizedHistory });
-    } catch (error) {
-      console.error('Error getting user history:', error);
-      res.status(500).json({ error: "Error al obtener historial" });
     }
   });
 
