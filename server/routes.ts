@@ -1973,3 +1973,107 @@ startxref
 
   return httpServer;
 }
+  // Admin Stats Dashboard - General statistics
+  app.get("/api/admin/stats", requireAuth, requireRole('admin'), async (req, res) => {
+    try {
+      // Get total users
+      const usersResult = await pool.query('SELECT COUNT(*) as count FROM users');
+      const totalUsers = parseInt(usersResult.rows[0].count);
+
+      // Get active paid subscriptions
+      const subsResult = await pool.query(`
+        SELECT COUNT(*) as count 
+        FROM users 
+        WHERE subscription_plan != 'free' 
+        AND subscription_status = 'active'
+      `);
+      const activeUsers = parseInt(subsResult.rows[0].count);
+
+      // Get current month revenue
+      const now = new Date();
+      const revenue = await storage.getMonthlyRevenue(now.getFullYear(), now.getMonth() + 1);
+      const monthlyRevenue = revenue.gross || 0;
+
+      // Get top searched diagrams
+      const topDiagramsResult = await pool.query(`
+        SELECT query, COUNT(*) as count 
+        FROM diagram_history 
+        GROUP BY query 
+        ORDER BY count DESC 
+        LIMIT 10
+      `);
+      const topDiagrams = topDiagramsResult.rows;
+
+      // Get recent users
+      const recentUsersResult = await pool.query(`
+        SELECT username, email, created_at 
+        FROM users 
+        ORDER BY created_at DESC 
+        LIMIT 5
+      `);
+      const recentUsers = recentUsersResult.rows.map(user => ({
+        username: user.username,
+        email: user.email || 'N/A',
+        createdAt: user.created_at
+      }));
+
+      // Get monthly growth (last 6 months)
+      const monthlyGrowth = [];
+      for (let i = 5; i >= 0; i--) {
+        const date = new Date();
+        date.setMonth(date.getMonth() - i);
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        
+        const result = await pool.query(`
+          SELECT COUNT(*) as count 
+          FROM users 
+          WHERE EXTRACT(YEAR FROM created_at) = $1 
+          AND EXTRACT(MONTH FROM created_at) = $2
+        `, [year, month]);
+        
+        const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+        monthlyGrowth.push({
+          month: monthNames[month - 1],
+          count: parseInt(result.rows[0].count)
+        });
+      }
+
+      res.json({
+        totalUsers,
+        activeUsers,
+        monthlyRevenue,
+        topDiagrams,
+        recentUsers,
+        monthlyGrowth
+      });
+    } catch (error) {
+      console.error('Admin stats error:', error);
+      res.status(500).json({ error: "Error al obtener estadísticas" });
+    }
+  });
+
+  // Admin Subscriptions - Get all active paid subscriptions
+  app.get("/api/admin/subscriptions", requireAuth, requireRole('admin'), async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT 
+          subscription_plan as plan,
+          subscription_status as status,
+          CASE 
+            WHEN subscription_plan = 'plus' THEN 14.99
+            WHEN subscription_plan = 'pro' THEN 24.99
+            WHEN subscription_plan = 'premium' THEN 39.99
+            ELSE 0
+          END as price
+        FROM users 
+        WHERE subscription_plan != 'free' 
+        AND subscription_status = 'active'
+      `);
+      
+      res.json(result.rows);
+    } catch (error) {
+      console.error('Admin subscriptions error:', error);
+      res.status(500).json({ error: "Error al obtener suscripciones" });
+    }
+  });
