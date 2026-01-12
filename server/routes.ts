@@ -1972,7 +1972,6 @@ startxref
   const httpServer = createServer(app);
 
   return httpServer;
-}
   // Admin Stats Dashboard - General statistics
   app.get("/api/admin/stats", requireAuth, requireRole('admin'), async (req, res) => {
     try {
@@ -2077,3 +2076,4 @@ startxref
       res.status(500).json({ error: "Error al obtener suscripciones" });
     }
   });
+}
